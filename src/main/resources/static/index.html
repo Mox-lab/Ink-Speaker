@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Novel Forge - 接口调试台</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #0f1419; color: #e6e6e6; padding: 20px; line-height: 1.6;
+        }
+        h1 { color: #58a6ff; margin-bottom: 8px; font-size: 22px; }
+        .subtitle { color: #8b949e; margin-bottom: 20px; font-size: 13px; }
+        .layout { display: grid; grid-template-columns: 280px 1fr; gap: 20px; max-width: 1400px; margin: 0 auto; }
+        .panel {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px;
+        }
+        .panel h2 { font-size: 14px; color: #58a6ff; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #30363d; }
+        .endpoint-list { display: flex; flex-direction: column; gap: 6px; }
+        .endpoint {
+            background: #21262d; border: 1px solid #30363d; border-radius: 6px;
+            padding: 10px 12px; cursor: pointer; transition: all 0.15s;
+        }
+        .endpoint:hover { border-color: #58a6ff; background: #1f2937; }
+        .endpoint.active { border-color: #58a6ff; background: #1f6feb33; }
+        .endpoint .method {
+            display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 3px;
+            font-weight: bold; margin-right: 8px; min-width: 38px; text-align: center;
+        }
+        .method-GET { background: #2ea04333; color: #2ea043; }
+        .method-POST { background: #db6d2833; color: #db6d28; }
+        .endpoint .path { font-family: monospace; font-size: 12px; color: #c9d1d9; }
+        .endpoint .desc { font-size: 11px; color: #8b949e; margin-top: 4px; }
+
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+        .form-group input, .form-group textarea {
+            width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+            color: #e6e6e6; padding: 8px 10px; font-family: monospace; font-size: 13px;
+        }
+        .form-group textarea { min-height: 120px; resize: vertical; }
+        .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #58a6ff; }
+        .btn {
+            background: #238636; color: white; border: none; border-radius: 6px;
+            padding: 8px 18px; font-size: 13px; cursor: pointer; font-weight: 500;
+        }
+        .btn:hover { background: #2ea043; }
+        .btn:disabled { background: #21262d; color: #6e7681; cursor: not-allowed; }
+        .btn-secondary { background: #21262d; border: 1px solid #30363d; margin-left: 8px; }
+        .btn-secondary:hover { background: #30363d; }
+
+        .response-area {
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            padding: 14px; font-family: "Consolas", monospace; font-size: 13px;
+            white-space: pre-wrap; word-break: break-all; min-height: 200px; max-height: 500px; overflow: auto;
+        }
+        .response-area.empty { color: #6e7681; font-style: italic; }
+        .response-area.success { border-color: #2ea043; }
+        .response-area.error { border-color: #f85149; }
+        .status-line { font-size: 12px; color: #8b949e; margin-top: 8px; }
+        .status-line .status-ok { color: #2ea043; }
+        .status-line .status-err { color: #f85149; }
+        .stream-area {
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            padding: 14px; font-family: "Consolas", monospace; font-size: 13px;
+            min-height: 200px; max-height: 500px; overflow: auto; white-space: pre-wrap;
+        }
+        .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+        .tab {
+            padding: 6px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+            cursor: pointer; font-size: 12px; color: #c9d1d9;
+        }
+        .tab.active { background: #1f6feb; border-color: #1f6feb; color: white; }
+        .hint { background: #1f6feb1a; border-left: 3px solid #58a6ff; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #c9d1d9; }
+    </style>
+</head>
+<body>
+    <h1>Novel Forge 接口调试台</h1>
+    <div class="subtitle">Spring Boot 3 + LangChain4j · AI 小说生成 Agent · 13 个接口可视化调试</div>
+
+    <div class="layout">
+        <!-- 左侧:接口列表 -->
+        <div class="panel">
+            <h2>接口列表</h2>
+            <div class="endpoint-list" id="endpointList"></div>
+        </div>
+
+        <!-- 右侧:调试区 -->
+        <div class="panel">
+            <h2 id="currentTitle">选择左侧接口开始调试</h2>
+
+            <div class="hint" id="hint">
+                提示:首次启动请先在 application.yml 配置 DeepSeek 的 API Key,然后点击 "对话测试 / chat" 开始体验。
+            </div>
+
+            <div id="formArea"></div>
+
+            <div style="margin-top: 16px;">
+                <button class="btn" id="sendBtn" disabled>发送请求</button>
+                <button class="btn btn-secondary" id="clearBtn">清空响应</button>
+            </div>
+
+            <div class="status-line" id="statusLine"></div>
+
+            <div class="tabs" id="tabs" style="display:none;">
+                <div class="tab active" data-tab="response">完整响应</div>
+                <div class="tab" data-tab="stream">流式输出</div>
+            </div>
+
+            <div id="responseArea" class="response-area empty">等待发送请求...</div>
+            <div id="streamArea" class="stream-area" style="display:none;"></div>
+        </div>
+    </div>
+
+<script>
+    // ============ 接口定义 ============
+    const endpoints = [
+        {
+            id: 'chat', method: 'POST', path: '/api/chat', name: '对话测试 / chat',
+            desc: '单轮对话,直接调 ChatModel',
+            fields: [
+                { key: 'message', label: '消息内容', type: 'textarea', default: '你好,介绍一下你自己' }
+            ]
+        },
+        {
+            id: 'chat-stream', method: 'POST', path: '/api/chat/stream', name: '流式对话 / chat/stream',
+            desc: 'SSE 流式输出,打字机效果',
+            fields: [
+                { key: 'message', label: '消息内容', type: 'textarea', default: '写一段 200 字的武侠开场白' }
+            ],
+            stream: true
+        },
+        {
+            id: 'writing', method: 'POST', path: '/api/writing', name: '写作助手 / writing',
+            desc: '多轮记忆 + 工具调用',
+            fields: [
+                { key: 'userId', label: '用户ID', type: 'input', default: 'writer-001' },
+                { key: 'message', label: '指令', type: 'textarea', default: '帮我写林晚与苏砚在云陵城码头的初遇,1500 字' }
+            ]
+        },
+        {
+            id: 'outline', method: 'POST', path: '/api/outline', name: '大纲生成 / outline',
+            desc: '输入题材+章节数,生成大纲',
+            fields: [
+                { key: 'theme', label: '题材描述', type: 'input', default: '东方玄幻+女主复仇+江湖权谋' },
+                { key: 'chapters', label: '章节数', type: 'input', default: '20' }
+            ]
+        },
+        {
+            id: 'chapter', method: 'POST', path: '/api/chapter', name: '章节生成 / chapter',
+            desc: '按大纲生成章节正文',
+            fields: [
+                { key: 'sessionId', label: '会话ID', type: 'input', default: 'novel-001' },
+                { key: 'outline', label: '本章大纲', type: 'textarea', default: '雨夜,林晚在云陵城码头捡到受伤的苏砚,带回家中疗伤。' },
+                { key: 'wordCount', label: '目标字数', type: 'input', default: '1500' }
+            ]
+        },
+        {
+            id: 'character', method: 'POST', path: '/api/character', name: '人物抽取 / character',
+            desc: '结构化输出人物卡',
+            fields: [
+                { key: 'text', label: '人物描写文本', type: 'textarea', default: '林晚,24岁,云陵城码头脚夫,外冷内热,左手腕有旧疤' }
+            ]
+        },
+        {
+            id: 'lore', method: 'POST', path: '/api/lore', name: '设定问答 / lore (RAG)',
+            desc: '基于知识库的检索增强问答',
+            fields: [
+                { key: 'sessionId', label: '会话ID', type: 'input', default: 'lore-001' },
+                { key: 'question', label: '问题', type: 'textarea', default: '听潮阁有什么规矩?' }
+            ]
+        },
+        {
+            id: 'lore-import-text', method: 'POST', path: '/api/lore/import', name: '导入设定 / lore/import',
+            desc: '把文本片段导入设定库',
+            fields: [
+                { key: 'text', label: '设定文本', type: 'textarea', default: '听潮阁规矩:情报买卖,从不赊账;不入江湖纷争;阁主更替不外传。' }
+            ]
+        },
+        {
+            id: 'lore-import-dir', method: 'POST', path: '/api/lore/import', name: '导入目录 / lore/import (dir)',
+            desc: '从指定目录批量导入文档',
+            fields: [
+                { key: 'dir', label: '目录路径', type: 'input', default: './knowledge-base' }
+            ]
+        },
+        {
+            id: 'lore-search', method: 'POST', path: '/api/lore/search', name: '检索调试 / lore/search',
+            desc: '查看设定库检索结果',
+            fields: [
+                { key: 'query', label: '检索词', type: 'input', default: '听潮阁' }
+            ]
+        },
+        {
+            id: 'memory', method: 'GET', path: '/api/memory', name: '记忆测试 / memory',
+            desc: '验证多轮对话记忆能力',
+            fields: []
+        }
+    ];
+
+    let currentEndpoint = null;
+
+    // ============ 渲染接口列表 ============
+    const listEl = document.getElementById('endpointList');
+    endpoints.forEach(ep => {
+        const div = document.createElement('div');
+        div.className = 'endpoint';
+        div.dataset.id = ep.id;
+        div.innerHTML = `
+            <div><span class="method method-${ep.method}">${ep.method}</span><span class="path">${ep.path}</span></div>
+            <div class="desc">${ep.name}</div>
+        `;
+        div.onclick = () => selectEndpoint(ep);
+        listEl.appendChild(div);
+    });
+
+    // ============ 选择接口 ============
+    function selectEndpoint(ep) {
+        currentEndpoint = ep;
+        document.querySelectorAll('.endpoint').forEach(el => {
+            el.classList.toggle('active', el.dataset.id === ep.id);
+        });
+        document.getElementById('currentTitle').textContent = `${ep.method} ${ep.path} — ${ep.desc}`;
+
+        // 渲染表单
+        const formArea = document.getElementById('formArea');
+        if (ep.fields.length === 0) {
+            formArea.innerHTML = '<div class="hint">此接口无需参数,直接点击 "发送请求"。</div>';
+        } else {
+            formArea.innerHTML = ep.fields.map(f => `
+                <div class="form-group">
+                    <label>${f.label} (${f.key})</label>
+                    ${f.type === 'textarea'
+                        ? `<textarea id="field-${f.key}" data-key="${f.key}">${f.default}</textarea>`
+                        : `<input type="text" id="field-${f.key}" data-key="${f.key}" value="${f.default}">`
+                    }
+                </div>
+            `).join('');
+        }
+
+        // 重置响应区
+        document.getElementById('responseArea').className = 'response-area empty';
+        document.getElementById('responseArea').textContent = '等待发送请求...';
+        document.getElementById('streamArea').style.display = 'none';
+        document.getElementById('streamArea').textContent = '';
+        document.getElementById('statusLine').textContent = '';
+        document.getElementById('tabs').style.display = ep.stream ? 'flex' : 'none';
+        document.getElementById('sendBtn').disabled = false;
+    }
+
+    // ============ Tab 切换 ============
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.onclick = () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            const isStream = tab.dataset.tab === 'stream';
+            document.getElementById('responseArea').style.display = isStream ? 'none' : 'block';
+            document.getElementById('streamArea').style.display = isStream ? 'block' : 'none';
+        };
+    });
+
+    // ============ 收集表单数据 ============
+    function collectBody(ep) {
+        const body = {};
+        ep.fields.forEach(f => {
+            const el = document.getElementById(`field-${f.key}`);
+            if (el) body[f.key] = el.value;
+        });
+        return body;
+    }
+
+    // ============ 发送请求 ============
+    document.getElementById('sendBtn').onclick = async () => {
+        if (!currentEndpoint) return;
+        const ep = currentEndpoint;
+        const sendBtn = document.getElementById('sendBtn');
+        const statusLine = document.getElementById('statusLine');
+        const responseArea = document.getElementById('responseArea');
+        const streamArea = document.getElementById('streamArea');
+
+        sendBtn.disabled = true;
+        sendBtn.textContent = '请求中...';
+        statusLine.textContent = '';
+        responseArea.className = 'response-area';
+        responseArea.textContent = '加载中...';
+        streamArea.textContent = '';
+
+        const url = ep.path;
+        const options = { method: ep.method, headers: {} };
+
+        if (ep.method === 'POST') {
+            options.headers['Content-Type'] = 'application/json';
+            options.body = JSON.stringify(collectBody(ep));
+        }
+
+        try {
+            if (ep.stream) {
+                // SSE 流式
+                const response = await fetch(url, options);
+                if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+
+                responseArea.textContent = '';
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // 解析 SSE 格式: data: xxx\n\n
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (line.startsWith('data:')) {
+                            const data = line.slice(5).trim();
+                            if (data) {
+                                streamArea.textContent += data;
+                                responseArea.textContent += data;
+                                streamArea.scrollTop = streamArea.scrollHeight;
+                            }
+                        }
+                    }
+                }
+                responseArea.className = 'response-area success';
+                statusLine.innerHTML = '<span class="status-ok">[流式完成]</span>';
+            } else {
+                const response = await fetch(url, options);
+                const text = await response.text();
+                let display = text;
+                try { display = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+                responseArea.textContent = display;
+                responseArea.className = response.ok ? 'response-area success' : 'response-area error';
+                statusLine.innerHTML = response.ok
+                    ? `<span class="status-ok">[HTTP ${response.status}] 请求成功 · ${text.length} 字节</span>`
+                    : `<span class="status-err">[HTTP ${response.status}] ${response.statusText}</span>`;
+            }
+        } catch (err) {
+            responseArea.textContent = err.message;
+            responseArea.className = 'response-area error';
+            statusLine.innerHTML = `<span class="status-err">[请求失败] ${err.message}</span>`;
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.textContent = '发送请求';
+        }
+    };
+
+    // ============ 清空响应 ============
+    document.getElementById('clearBtn').onclick = () => {
+        const responseArea = document.getElementById('responseArea');
+        responseArea.className = 'response-area empty';
+        responseArea.textContent = '等待发送请求...';
+        document.getElementById('streamArea').textContent = '';
+        document.getElementById('statusLine').textContent = '';
+    };
+
+    // 默认选中第一个
+    selectEndpoint(endpoints[0]);
+</script>
+</body>
+</html>

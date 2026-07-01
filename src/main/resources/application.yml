@@ -1,0 +1,74 @@
+# ============================================================
+# Novel Forge 配置文件 - AI 小说生成 Agent
+# ============================================================
+# 说明:
+#   1. 项目同时配置了 OpenAI 兼容接口与 Ollama 本地模型。
+#   2. 默认使用 OpenAI 兼容接口(以 DeepSeek 为例);若想切换为 Ollama,
+#      修改下面的 spring.profiles.active 即可。
+#   3. 生产环境请把 API Key 放到环境变量或配置中心,不要硬编码。
+#   4. 小说创作对 maxTokens 需求较大,默认调高到 4000。
+# ============================================================
+
+server:
+  port: 9688
+
+spring:
+  application:
+    name: novel-forge
+  # 通过 Profile 切换模型 Provider
+  profiles:
+    active: openai   # 可选值: openai | ollama
+
+# ------------------------------------------------------------
+# OpenAI 兼容接口配置(DeepSeek 示例)
+# ------------------------------------------------------------
+# DeepSeek 官网: https://platform.deepseek.com
+# base-url: DeepSeek 的 OpenAI 兼容端点
+# 其他兼容服务(改 base-url 即可):
+#   OpenAI:    https://api.openai.com/v1
+#   通义千问:   https://dashscope.aliyuncs.com/compatible-mode/v1
+#   Moonshot:  https://api.moonshot.cn/v1
+#   智谱 GLM:  https://open.bigmodel.cn/api/paas/v4
+# ------------------------------------------------------------
+langchain4j:
+  open-ai:
+    chat-model:
+      # 从环境变量读取,避免泄露;本地测试也可直接写 key
+      api-key: ${OPENAI_API_KEY:sk-LFeVy00VsFH3kEAq05BcmH4JqK8xcmQmWzcQzmvnR3lR1qXG}
+      base-url: https://aihub.bielcrystal.com/v1
+      model-name: glm-5.2
+      temperature: 0.85       # 小说创作需要更高 temperature,增加创意
+      max-tokens: 1000        # 单次生成篇幅更大
+      timeout: PT120S         # 长文生成慢,超时调长
+      log-requests: true
+      log-responses: true
+  ollama:
+    chat-model:
+      base-url: http://localhost:11434
+      # 推荐用 qwen2.5:14b 或更大模型,小说创作质量更好
+      # 需要先在 Ollama 中拉取模型: ollama pull qwen2.5:14b
+      model-name: qwen2.5:14b
+      temperature: 0.85
+      timeout: PT120S
+      log-requests: true
+      log-responses: true
+
+# ------------------------------------------------------------
+# 小说生成应用配置
+# ------------------------------------------------------------
+novel:
+  # 小说设定库目录(世界观/人物/大纲等参考文档)
+  knowledge-base-dir: ./knowledge-base
+  # 嵌入维度(all-minilm-l6-v2 模型为 384 维)
+  embedding-dimension: 384
+  # RAG 检索 top-k
+  rag-top-k: 5
+  # 默认生成长度
+  default-chapter-length: 2000
+  # 默认叙事视角: first-person | third-person-limited | third-person-omniscient
+  default-narrative-pov: third-person-limited
+
+logging:
+  level:
+    dev.langchain4j: DEBUG
+    com.novel.agent: DEBUG

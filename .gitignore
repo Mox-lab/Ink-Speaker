@@ -1,0 +1,22 @@
+target/
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# 日志
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maven
+*.versionsBackup
+
+# 本地配置(可覆盖)
+application-local.yml
