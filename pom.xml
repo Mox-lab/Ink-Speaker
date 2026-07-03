@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.4</version>
+        <version>3.5.16</version>
         <relativePath/>
     </parent>
 
@@ -19,73 +19,95 @@
 
     <properties>
         <java.version>21</java.version>
-        <langchain4j.version>1.0.0-beta3</langchain4j.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- 主框架 -->
+        <spring-boot.version>3.5.16</spring-boot.version>
+        <langchain4j.version>1.17.0</langchain4j.version>
+        <langchain4j-beta.version>1.17.0-beta27</langchain4j-beta.version>
+
+        <!-- 数据库 -->
+        <postgresql.version>42.7.7</postgresql.version>
+
+        <!-- 漏洞依赖锁定 -->
+        <commons-io.version>2.18.0</commons-io.version>
+        <commons-logging.version>1.3.5</commons-logging.version>
+        <commons-compress.version>1.27.1</commons-compress.version>
+        <commons-codec.version>1.17.2</commons-codec.version>
+        <commons-lang3.version>3.17.0</commons-lang3.version>
+        <bouncycastle.version>1.79</bouncycastle.version>
+        <jsoup.version>1.18.3</jsoup.version>
+        <byte-buddy.version>1.15.11</byte-buddy.version>
+        <asm.version>9.7.1</asm.version>
+        <lombok.version>1.18.36</lombok.version>
+
+        <!-- 日志框架漏洞锁定(logback 漏洞修复:CVE-2025-11226 / CVE-2026-1225) -->
+        <logback.version>1.5.22</logback.version>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- LangChain4j BOM -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- LangChain4j(beta 版本统一锁定,BOM 不覆盖) -->
+            <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-spring-boot-starter</artifactId><version>${langchain4j-beta.version}</version></dependency>
+            <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-open-ai-spring-boot-starter</artifactId><version>${langchain4j-beta.version}</version></dependency>
+            <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-ollama-spring-boot-starter</artifactId><version>${langchain4j-beta.version}</version></dependency>
+            <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId><version>${langchain4j-beta.version}</version></dependency>
+            <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-pgvector</artifactId><version>${langchain4j-beta.version}</version></dependency>
+
+            <!-- Commons -->
+            <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>${commons-io.version}</version></dependency>
+            <dependency><groupId>commons-logging</groupId><artifactId>commons-logging</artifactId><version>${commons-logging.version}</version></dependency>
+            <dependency><groupId>org.apache.commons</groupId><artifactId>commons-compress</artifactId><version>${commons-compress.version}</version></dependency>
+            <dependency><groupId>commons-codec</groupId><artifactId>commons-codec</artifactId><version>${commons-codec.version}</version></dependency>
+            <dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>${commons-lang3.version}</version></dependency>
+
+            <!-- BouncyCastle -->
+            <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
+            <dependency><groupId>org.bouncycastle</groupId><artifactId>bcpkix-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
+            <dependency><groupId>org.bouncycastle</groupId><artifactId>bcutil-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
+            <dependency><groupId>org.bouncycastle</groupId><artifactId>bcjmail-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
+
+            <!-- 其他 -->
+            <dependency><groupId>org.jsoup</groupId><artifactId>jsoup</artifactId><version>${jsoup.version}</version></dependency>
+            <dependency><groupId>net.bytebuddy</groupId><artifactId>byte-buddy</artifactId><version>${byte-buddy.version}</version></dependency>
+            <dependency><groupId>net.bytebuddy</groupId><artifactId>byte-buddy-agent</artifactId><version>${byte-buddy.version}</version></dependency>
+            <dependency><groupId>org.ow2.asm</groupId><artifactId>asm</artifactId><version>${asm.version}</version></dependency>
+            <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>${postgresql.version}</version></dependency>
+            <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><version>${lombok.version}</version></dependency>
+
+            <!-- 日志框架(logback 漏洞修复:CVE-2025-11226 / CVE-2026-1225) -->
+            <dependency><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId><version>${logback.version}</version></dependency>
+            <dependency><groupId>ch.qos.logback</groupId><artifactId>logback-core</artifactId><version>${logback.version}</version></dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
-        <!-- Spring Boot Web: 提供 REST 接口 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
+        <!-- Spring Boot -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-jpa</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
 
-        <!-- LangChain4j 核心: ChatModel / AiServices / Memory 等基础能力 -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j</artifactId>
-            <version>${langchain4j.version}</version>
-        </dependency>
+        <!-- LangChain4j(版本由 BOM 管理) -->
+        <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j</artifactId></dependency>
+        <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-spring-boot-starter</artifactId></dependency>
+        <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-open-ai-spring-boot-starter</artifactId></dependency>
+        <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-ollama-spring-boot-starter</artifactId></dependency>
+        <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId></dependency>
+        <dependency><groupId>dev.langchain4j</groupId><artifactId>langchain4j-pgvector</artifactId></dependency>
 
-        <!-- LangChain4j Spring Boot 集成: 自动配置 ChatModel/AiServices Bean -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
-        </dependency>
-
-        <!-- OpenAI 兼容接口: 适用于 OpenAI / DeepSeek / 通义千问 / Moonshot 等 -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
-        </dependency>
-
-        <!-- Ollama: 本地开源大模型接入 -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-ollama-spring-boot-starter</artifactId>
-            <version>${langchain4j.version}</version>
-        </dependency>
-
-        <!-- 向量存储: 内存向量库，便于演示 RAG，无需额外部署 -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
-            <version>${langchain4j.version}</version>
-        </dependency>
-
-        <!-- 向量存储: Redis/Chroma/Pinecone 等可后续按需替换 -->
-
-        <!-- 文档加载: 解析 PDF/Word/Markdown 等 -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-document-parser-apache-tika</artifactId>
-            <version>${langchain4j.version}</version>
-        </dependency>
-
-        <!-- Lombok: 简化 Java 代码 -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- 测试 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
+        <!-- 数据库 & 工具 -->
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
+        <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><optional>true</optional></dependency>
     </dependencies>
 
     <build>
@@ -100,6 +122,17 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <parameters>true</parameters>
+                    <compilerArgs>
+                        <arg>-Xlint:options</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
         </plugins>

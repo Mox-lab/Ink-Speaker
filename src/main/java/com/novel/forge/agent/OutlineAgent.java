@@ -1,26 +1,20 @@
-package com.novel.agent.agent;
+package com.novel.forge.agent;
 
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 
 /**
- * 大纲生成 Agent
- * <p>
- * 给定题材/主题/篇幅要求,生成结构化大纲。
- * 输出格式固定为字符串(多行 markdown),便于作者直接编辑。
- * </p>
- * <p>
- * 实现由 {@link com.novel.agent.config.AgentConfig#outlineAgent} 手动构建。
- * </p>
+ * 大纲生成 Agent。
+ * <p>给定题材/篇幅,生成 markdown 大纲。实现由 AgentConfig#outlineAgent 构建。</p>
  */
 public interface OutlineAgent {
 
     /**
-     * 大纲生成
+     * 大纲生成。
      *
-     * @param theme  题材描述,例如 "东方玄幻+女主复仇+江湖权谋"
+     * @param theme   题材描述,例如 "东方玄幻+女主复仇+江湖权谋"
      * @param chapters 目标章节数
-     * @return markdown 格式的大纲
+     * @return markdown 格式的大纲文本
      */
     @SystemMessage("""
             你是网文大纲策划师。请根据用户给定的题材与目标章节数,生成一份结构化大纲。

@@ -1,26 +1,19 @@
-package com.novel.agent.agent;
+package com.novel.forge.agent;
 
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 
 /**
- * 章节生成 Agent
- * <p>
- * 给定章节大纲与字数要求,生成完整章节正文。
- * 与 WritingAssistantAgent 的区别:本 Agent 专注于"按大纲写章节",
- * 不做问答、改稿等通用对话,职责单一,提示词更聚焦。
- * </p>
- * <p>
- * 实现由 {@link com.novel.agent.config.AgentConfig#chapterAgent} 手动构建。
- * </p>
+ * 章节生成 Agent。
+ * <p>按大纲写章节,职责单一,提示词聚焦。实现由 AgentConfig#chapterAgent 构建。</p>
  */
 public interface ChapterAgent {
 
     /**
-     * 章节生成
+     * 章节生成。
      *
-     * @param sessionId 会话 ID(同一作品的连续章节共享 Memory)
+     * @param sessionId 会话 ID(同一作品的连续章节共享 Memory,保持人物语气连贯)
      * @param outline   本章大纲(可包含上一章结尾的衔接提示)
      * @param wordCount 目标字数
      * @return 章节正文

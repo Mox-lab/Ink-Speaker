@@ -18,6 +18,19 @@ spring:
   # 通过 Profile 切换模型 Provider
   profiles:
     active: openai   # 可选值: openai | ollama
+  # 数据库
+  datasource:
+    url: jdbc:postgresql://localhost:5432/novel_forge
+    username: postgres
+    password:
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update        # 业务表自动建表;向量表由 LangChain4j 建
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
 # ------------------------------------------------------------
 # OpenAI 兼容接口配置(DeepSeek 示例)
@@ -33,12 +46,12 @@ spring:
 langchain4j:
   open-ai:
     chat-model:
-      # 从环境变量读取,避免泄露;本地测试也可直接写 key
+      # 从环境变量读取,避免泄露;请勿在此硬编码真实 key
       api-key: ${OPENAI_API_KEY:sk-LFeVy00VsFH3kEAq05BcmH4JqK8xcmQmWzcQzmvnR3lR1qXG}
       base-url: https://aihub.bielcrystal.com/v1
       model-name: glm-5.2
       temperature: 0.85       # 小说创作需要更高 temperature,增加创意
-      max-tokens: 1000        # 单次生成篇幅更大
+      max-tokens: 4000        # 单次生成篇幅更大,小说章节需要足够 token
       timeout: PT120S         # 长文生成慢,超时调长
       log-requests: true
       log-responses: true
@@ -67,8 +80,17 @@ novel:
   default-chapter-length: 2000
   # 默认叙事视角: first-person | third-person-limited | third-person-omniscient
   default-narrative-pov: third-person-limited
+  # 当前小说 ID(预留多本小说切换,默认 1)
+  current-id: 1
+
+  # 新增:pgvector 向量库配置(自定义命名空间,代码里 @Value 读)
+  pgvector:
+    table: langchain4j_embeddings   # 表名
+    dimension: 384                   # 必须与 embedding 模型一致
+    use-index: true                  # 启用 HNSW 索引,加速检索
+    index-list-size: 100             # IVFFlat 的 lists 参数,经验值 sqrt(行数);几千~几万条用 100
 
 logging:
   level:
     dev.langchain4j: DEBUG
-    com.novel.agent: DEBUG
+    com.novel.forge: DEBUG

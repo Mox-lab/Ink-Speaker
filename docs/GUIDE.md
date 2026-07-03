@@ -457,7 +457,7 @@ langchain4j:
 logging:
   level:
     dev.langchain4j: DEBUG
-    com.novel.agent: DEBUG
+    com.novel.forge: DEBUG
 ```
 
 启动后会看到完整的 Prompt 和 LLM 响应,排查问题非常方便。
