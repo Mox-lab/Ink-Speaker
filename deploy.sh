@@ -22,6 +22,10 @@
 #   - 已准备 .env.prod 文件(由 .env.prod.example 拷贝并修改)
 #   - 后端仓库根目录有 Dockerfile,前端仓库 ink-speaker-web 也有 Dockerfile
 #
+# Git 仓库(都是 public,HTTPS 直接 clone,无需 SSH key / token):
+#   - 后端:从 .git/config 读取 origin url(回退默认值 https://github.com/Mox-lab/Ink-Speaker.git)
+#   - 前端:硬编码 https://github.com/Mox-lab/Ink-Speaker-Web.git
+#
 # 目录布局:
 #   /opt/ink-speaker/              ← 后端仓库(deploy.sh 所在目录)
 #     ├── Dockerfile
@@ -53,8 +57,10 @@ IMAGE_WEB_BACKUP="${WEB_NAME}:prev"
 HEALTH_URL="http://localhost:9688/actuator/health"
 HEALTH_TIMEOUT=120                  # 健康检查最长等待秒数
 
-# 前端 git 仓库地址(默认走 origin,可在 .env.prod 用 WEB_GIT_URL 覆盖)
-WEB_GIT_URL="${WEB_GIT_URL:-git@github.com:Mox-lab/Ink-Speaker-Web.git}"
+# Git 仓库地址(前后端都是 public 仓库,直接 HTTPS clone,无需 SSH key / token)
+# 从后端仓库的 .git/config 读取 origin url,前端仓库地址硬编码为 Mox-lab/Ink-Speaker-Web
+APP_GIT_URL=$(git -C "${APP_DIR}" config --get remote.origin.url 2>/dev/null || echo "https://github.com/Mox-lab/Ink-Speaker.git")
+WEB_GIT_URL="https://github.com/Mox-lab/Ink-Speaker-Web.git"
 
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
@@ -88,16 +94,16 @@ check_prerequisites() {
         请执行:cp .env.prod.example .env.prod 并填入真实密钥"
     fi
 
-    # 加载 .env.prod(用于读取 WEB_GIT_URL 等自定义配置)
+    # 加载 .env.prod(用于读取 DB_PASSWORD / OPENAI_API_KEY 等业务密钥)
     set -a
     # shellcheck disable=SC1090
     source "${ENV_FILE}"
     set +a
-    WEB_GIT_URL="${WEB_GIT_URL:-git@github.com:Mox-lab/Ink-Speaker-Web.git}"
 
     info "前置检查通过"
     info "  后端目录:${APP_DIR}"
     info "  前端目录:${WEB_DIR}"
+    info "  后端仓库:${APP_GIT_URL}"
     info "  前端仓库:${WEB_GIT_URL}"
 }
 
@@ -110,6 +116,7 @@ pull_latest() {
 
     # ---------- 后端 ----------
     cd "${APP_DIR}"
+    info "  后端仓库:${APP_GIT_URL}"
     if ! git diff --quiet || ! git diff --cached --quiet; then
         warn "后端检测到本地改动,执行 stash"
         git stash push -m "auto-stash before deploy $(date +%s)" || true
@@ -120,6 +127,7 @@ pull_latest() {
     info "  后端已更新到提交:$(git rev-parse --short HEAD)"
 
     # ---------- 前端 ----------
+    info "  前端仓库:${WEB_GIT_URL}"
     if [[ ! -d "${WEB_DIR}/.git" ]]; then
         info "  前端目录不存在,首次 clone..."
         mkdir -p "$(dirname "${WEB_DIR}")"

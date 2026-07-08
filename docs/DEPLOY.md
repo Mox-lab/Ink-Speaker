@@ -223,11 +223,6 @@ JWT_SECRET=替换为强随机字符串_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # 4. Jasypt 加密主密钥(至少 32 字节,执行:openssl rand -base64 32)
 JASYPT_KEY=替换为强随机字符串_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# 5. (可选)前端仓库地址,留空走默认值 git@github.com:Mox-lab/Ink-Speaker-Web.git
-#    如果前端是私有库且服务器没配 SSH key,改为 HTTPS + token:
-#    https://<token>@github.com/Mox-lab/Ink-Speaker-Web.git
-# WEB_GIT_URL=
 ```
 
 **生成强随机密钥的命令**(在服务器执行):
@@ -238,25 +233,14 @@ openssl rand -base64 32    # 用于 JASYPT_KEY
 openssl rand -base64 24    # 用于 DB_PASSWORD
 ```
 
-**关于前端仓库的访问权限**:
-- 如果前端是 **public 仓库**(当前 `Mox-lab/Ink-Speaker-Web` 是 public):无需任何配置,`deploy.sh` 直接 clone
-- 如果前端是 **private 仓库**:需要在服务器配置 SSH key(推荐),或在 `.env.prod` 设置 `WEB_GIT_URL=https://<token>@github.com/...`
+**Git 仓库配置**(已在 `deploy.sh` 顶部硬编码,public 仓库直接 HTTPS clone,无需 SSH key / token):
 
-**SSH key 配置**(private 仓库推荐):
+| 仓库 | 地址 | 来源 |
+|------|------|------|
+| 后端 | `https://github.com/Mox-lab/Ink-Speaker.git` | 从后端仓库 `.git/config` 读取 origin url,回退到默认值 |
+| 前端 | `https://github.com/Mox-lab/Ink-Speaker-Web.git` | `deploy.sh` 顶部 `WEB_GIT_URL` 变量 |
 
-```bash
-# 1. 在服务器生成 SSH key(一路回车)
-ssh-keygen -t ed25519 -C "deploy@ink-speaker-prod"
-
-# 2. 查看公钥,复制输出
-cat ~/.ssh/id_ed25519.pub
-
-# 3. 把公钥添加到 GitHub:Settings → SSH and GPG keys → New SSH key
-
-# 4. 测试连通
-ssh -T git@github.com
-# 期望:Hi Mox-lab! You've successfully authenticated...
-```
+如需修改前端仓库地址,直接编辑 `deploy.sh` 顶部的 `WEB_GIT_URL` 变量即可。
 
 **关键安全提醒**:
 - `.env.prod` 已在 `.gitignore` 中,不会提交到 git
@@ -557,15 +541,14 @@ docker compose logs ink-speaker | grep -E "(Started|Flyway|Tomcat)"
 - [ ] 2. 上传 `server-init.sh`,执行 `sudo bash server-init.sh`
 - [ ] 3. 验证 Docker 已安装:`docker --version && docker compose version`
 - [ ] 4. 腾讯云安全组:放行 22/tcp、80/tcp,拒绝 9688/9689/5432/6379
-- [ ] 5. (前端私有库才需要)配置 SSH key,添加到 GitHub
-- [ ] 6. `cd /opt/ink-speaker && git clone https://github.com/Mox-lab/Ink-Speaker.git .`
-- [ ] 7. `cp .env.prod.example .env.prod && vim .env.prod` 填入真实密钥
-- [ ] 8. `chmod 600 .env.prod` 收紧权限
-- [ ] 9. `./deploy.sh --no-pull` 首次部署(自动 clone 前端仓库)
-- [ ] 10. 验证 `docker compose ps` 四个容器都 Up / healthy(postgres / redis / ink-speaker / nginx)
-- [ ] 11. 验证 `curl http://localhost:9688/actuator/health` 返回 UP
-- [ ] 12. 浏览器访问 `http://175.24.206.254/` 看到前端首页
-- [ ] 13. (可选)配置 crontab 每日数据库备份
-- [ ] 14. (可选)SSH 改密钥登录,禁用密码
+- [ ] 5. `cd /opt/ink-speaker && git clone https://github.com/Mox-lab/Ink-Speaker.git .`
+- [ ] 6. `cp .env.prod.example .env.prod && vim .env.prod` 填入真实密钥
+- [ ] 7. `chmod 600 .env.prod` 收紧权限
+- [ ] 8. `./deploy.sh --no-pull` 首次部署(自动 clone 前端仓库)
+- [ ] 9. 验证 `docker compose ps` 四个容器都 Up / healthy(postgres / redis / ink-speaker / nginx)
+- [ ] 10. 验证 `curl http://localhost:9688/actuator/health` 返回 UP
+- [ ] 11. 浏览器访问 `http://175.24.206.254/` 看到前端首页
+- [ ] 12. (可选)配置 crontab 每日数据库备份
+- [ ] 13. (可选)SSH 改密钥登录,禁用密码
 
 完成以上步骤后,Ink Speaker 已在生产环境稳定运行。
