@@ -4,14 +4,24 @@
 # 组件:
 #   - postgres: pgvector 向量库(降低内存至 512MB)
 #   - redis:    L2 缓存 + ShedLock(关闭 AOF,降低 IO 压力)
-#   - ink-speaker: 业务应用
+#   - ink-speaker: 业务应用(后端 Spring Boot)
+#   - nginx:     前端静态托管 + 反向代理
 #
 # 资源分配(4GB 总量):
 #   - postgres:     512MB
-#   - redis:        64MB
-#   - ink-speaker:  2048MB(-Xmx1600m + 元空间 + 堆外)
+#   - redis:        96MB
+#   - ink-speaker:  2048MB(-Xmx 约 1.4GB + 元空间 + 堆外)
+#   - nginx:        64MB
 #   - 系统 + Docker: ~500MB
-#   - 预留:         ~900MB(避免 OOM kill)
+#   - 预留:         ~800MB(避免 OOM kill)
+#
+# 端口暴露策略:
+#   - 80   nginx 对外(用户访问入口)
+#   - 22   SSH(由系统管,不在此处)
+#   - 9688 后端业务端口仅本机(由 nginx 反代)
+#   - 9689 Actuator 端口仅本机(运维诊断用)
+#   - 5432 PostgreSQL 仅本机
+#   - 6379 Redis 仅本机
 # ============================================================
 
 services:
@@ -91,7 +101,7 @@ services:
       - ink-net
 
   # ------------------------------------------------------------
-  # Ink Speaker 应用
+  # Ink Speaker 后端应用
   # ------------------------------------------------------------
   ink-speaker:
     image: ink-speaker:latest
@@ -116,7 +126,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
       JASYPT_KEY: ${JASYPT_KEY:-ink-speaker-prod-key}
-      # JVM 参数:容器限制 2GB,-Xmx 设 1.6GB,留堆外/元空间
+      # JVM 参数:容器限制 2GB,-Xmx 设 1.4GB,留堆外/元空间
       JAVA_OPTS: >-
         -XX:InitialRAMPercentage=50
         -XX:MaxRAMPercentage=70
@@ -130,8 +140,8 @@ services:
         -Duser.timezone=Asia/Shanghai
         -Dfile.encoding=UTF-8
     ports:
-      - "9688:9688"                      # 业务端口对外
-      - "9689:9689"                      # Actuator 竡口(生产建议加防火墙白名单)
+      - "127.0.0.1:9688:9688"            # 仅本机访问,由 nginx 反代对外
+      - "127.0.0.1:9689:9689"            # Actuator 仅本机(运维 SSH 隧道访问)
     volumes:
       - app_logs:/app/logs
       - app_knowledge_base:/app/knowledge-base
@@ -145,6 +155,31 @@ services:
       timeout: 5s
       retries: 5
       start_period: 90s
+    networks:
+      - ink-net
+
+  # ------------------------------------------------------------
+  # Nginx 前端 + 反向代理(用户访问入口)
+  # ------------------------------------------------------------
+  nginx:
+    image: ink-speaker-web:latest
+    container_name: ink-nginx
+    restart: unless-stopped
+    depends_on:
+      ink-speaker:
+        condition: service_healthy
+    ports:
+      - "80:80"                           # 对外暴露 80 端口
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - ink-net
 
