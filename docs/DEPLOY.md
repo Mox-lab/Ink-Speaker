@@ -1,6 +1,9 @@
 # Ink Speaker 部署文档(腾讯云 4GB 服务器 / Debian 13.2)
 
 > 本文档覆盖从空服务器到 Ink Speaker 上线的全部流程,所有步骤均可复制粘贴执行。
+>
+> **部署模式**:GitHub Actions 构建镜像 → 推阿里云 ACR → 服务器 docker pull 拉取部署。
+> 服务器**不构建镜像**,只拉取已构建好的镜像启动,资源占用低、部署快(< 30 秒)。
 
 ---
 
@@ -100,15 +103,33 @@ Ink Speaker 是单机部署的中小型应用,核心负载是 LLM API 调用(瓶
 
 ```
 /opt/
-├── ink-speaker/              ← 后端仓库(deploy.sh 所在目录)
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   ├── .env.prod
-│   ├── deploy.sh
-│   └── server-init.sh
-└── ink-speaker-web/          ← 前端仓库(由 deploy.sh 自动 clone)
-    ├── Dockerfile
-    └── nginx.conf
+├── ink-speaker/              ← 后端仓库(deploy.sh 所在目录,只用来放部署脚本)
+│   ├── docker-compose.yml    ← 编排文件(从 ACR 拉镜像)
+│   ├── .env.prod             ← 环境变量(含 ACR 账号密码)
+│   ├── deploy.sh             ← 一键部署脚本(拉镜像 + 重启)
+│   └── server-init.sh        ← 服务器初始化(只跑一次)
+└── (前端仓库不在服务器上,在 GitHub Actions 上构建)
+```
+
+**构建流程**(GitHub → ACR → 服务器):
+
+```
+开发者 push 代码到 GitHub
+        │
+        ▼
+GitHub Actions 自动触发(前后端各自 workflow)
+        │
+        ├─ 后端:mvn package → docker build → docker push 到 ACR
+        └─ 前端:pnpm build  → docker build → docker push 到 ACR
+        │
+        ▼
+阿里云 ACR(registry.cn-shenzhen.aliyuncs.com/mox-lab/)
+  ├─ ink-speaker:latest
+  └─ ink-speaker-web:latest
+        │
+        │  服务器 SSH 执行 ./deploy.sh
+        ▼
+腾讯云服务器 docker pull 拉镜像 → docker compose up -d 重启容器
 ```
 
 **访问入口**:用户浏览器访问 `http://175.24.206.254/`,nginx 托管前端 + `/api/*` 反代到后端。
@@ -194,7 +215,7 @@ systemctl is-active docker    # 应输出 active
 
 ### Step 5:克隆后端代码 + 配置 .env.prod
 
-**只需要手动 clone 后端仓库,前端仓库由 `deploy.sh` 自动 clone。**
+**只需要手动 clone 后端仓库(只用来获取 deploy.sh / docker-compose.yml / .env.prod.example 这几个部署文件)。镜像构建在 GitHub Actions 上完成,服务器不构建。**
 
 ```bash
 cd /opt/ink-speaker
@@ -223,6 +244,12 @@ JWT_SECRET=替换为强随机字符串_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # 4. Jasypt 加密主密钥(至少 32 字节,执行:openssl rand -base64 32)
 JASYPT_KEY=替换为强随机字符串_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# 5. 阿里云 ACR(镜像仓库)
+ACR_REGISTRY=registry.cn-shenzhen.aliyuncs.com
+ACR_NAMESPACE=mox-lab
+ACR_USERNAME=你的阿里云账号
+ACR_PASSWORD=ACR访问凭证固定密码
 ```
 
 **生成强随机密钥的命令**(在服务器执行):
@@ -233,36 +260,44 @@ openssl rand -base64 32    # 用于 JASYPT_KEY
 openssl rand -base64 24    # 用于 DB_PASSWORD
 ```
 
-**Git 仓库配置**(已在 `deploy.sh` 顶部硬编码,public 仓库直接 HTTPS clone,无需 SSH key / token):
-
-| 仓库 | 地址 | 来源 |
-|------|------|------|
-| 后端 | `https://github.com/Mox-lab/Ink-Speaker.git` | 从后端仓库 `.git/config` 读取 origin url,回退到默认值 |
-| 前端 | `https://github.com/Mox-lab/Ink-Speaker-Web.git` | `deploy.sh` 顶部 `WEB_GIT_URL` 变量 |
-
-如需修改前端仓库地址,直接编辑 `deploy.sh` 顶部的 `WEB_GIT_URL` 变量即可。
-
 **关键安全提醒**:
 - `.env.prod` 已在 `.gitignore` 中,不会提交到 git
 - 权限建议收紧:`chmod 600 .env.prod`
 - 不要把 `.env.prod` 通过任何聊天工具/截图外发
+
+### Step 5.5:配置 GitHub Secrets(在 GitHub 网页操作)
+
+**这一步让 GitHub Actions 能推镜像到你的阿里云 ACR。**
+
+到 GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret,添加 4 个:
+
+| Secret 名 | 值 | 说明 |
+|-----------|-----|------|
+| `ACR_REGISTRY` | `registry.cn-shenzhen.aliyuncs.com` | 阿里云 ACR 地址(华南建议深圳) |
+| `ACR_NAMESPACE` | `mox-lab` | ACR 命名空间(在 ACR 控制台创建) |
+| `ACR_USERNAME` | 你的阿里云账号 | ACR 访问凭证账号 |
+| `ACR_PASSWORD` | ACR 固定密码 | ACR 控制台 → 访问凭证 → 设置固定密码 |
+
+**前后端两个仓库都要配**(因为各自有独立的 workflow)。
+
+配置完后,只要 push 到 main 分支,GitHub Actions 会自动构建并推镜像到 ACR。可以在仓库的 Actions 标签页看构建进度。
 
 ### Step 6:首次部署
 
 ```bash
 cd /opt/ink-speaker
 chmod +x deploy.sh
-./deploy.sh --no-pull    # 首次部署不需要 git pull 后端(前端会自动 clone)
+./deploy.sh
 ```
 
-`deploy.sh` 会自动完成:
+`deploy.sh`(镜像拉取模式)会自动完成:
 
-1. **前置检查**:确认 git / docker / docker compose 已安装,`.env.prod` 已就绪
-2. **拉取代码**:首次部署前端目录不存在,自动 `git clone` 前端仓库到 `/opt/ink-speaker-web`
+1. **前置检查**:确认 docker / docker compose 已安装,`.env.prod` 必填项齐全
+2. **登录 ACR**:用 `.env.prod` 里的 ACR 账号密码登录
 3. **备份当前镜像**:`docker tag ... :prev`(首次部署会跳过)
-4. **构建镜像**:后端 `ink-speaker:latest`(maven build + JRE)+ 前端 `ink-speaker-web:latest`(pnpm build + nginx)
-5. **重启服务**:仅重启 `ink-speaker` + `nginx`,不动 postgres/redis
-6. **健康检查**:后端最长 120s 轮询 `/actuator/health`,nginx 最长 30s 轮询 80 端口
+4. **拉取镜像**:`docker pull` 后端 + 前端 latest 镜像(从阿里云 ACR,国内速度极快)
+5. **重启服务**:`docker compose up -d --no-deps --force-recreate` 重启 ink-speaker + nginx
+6. **健康检查**:后端最长 180s 轮询 `/actuator/health`,nginx 最长 30s 轮询 80 端口
 7. **清理 dangling 镜像**:`docker image prune -f`
 
 **部署日志**:`/opt/ink-speaker/deploy-logs/deploy-YYYYMMDD-HHMMSS.log`
@@ -297,16 +332,14 @@ curl -I http://localhost/
 
 ```bash
 cd /opt/ink-speaker
-./deploy.sh              # 默认拉取 origin/main 分支(前后端都更新)
-# 或
-./deploy.sh dev          # 拉取 dev 分支
+./deploy.sh              # 拉取最新镜像并重启(前后端都更新)
 ```
 
 **只更新前端 / 后端**:
 
 ```bash
-./deploy.sh --frontend-only --no-pull    # 只重新构建前端(改了 nginx.conf 时用)
-./deploy.sh --backend-only               # 只拉后端代码并重新构建
+./deploy.sh --frontend-only    # 只拉前端镜像并重启 nginx
+./deploy.sh --backend-only     # 只拉后端镜像并重启 ink-speaker
 ```
 
 **回滚到上一版本**(健康检查失败时):
@@ -315,7 +348,17 @@ cd /opt/ink-speaker
 ./deploy.sh --rollback
 ```
 
-回滚逻辑:`ink-speaker:prev` 和 `ink-speaker-web:prev` 镜像 tag 回 `:latest`,重启容器,等待 30 秒后再次健康检查。
+回滚逻辑:本地 `:prev` tag 重新打回 `:latest`,重启容器,等待 30 秒后再次健康检查。
+
+> **注意**:回滚只能回到**上一次成功部署的版本**。如果连续跑了两次 `./deploy.sh`,第二次的 prev 是第一次的镜像,不是更早的版本。如需回滚到指定版本,可用 ACR 上的 SHA tag:
+>
+> ```bash
+> # 拉指定版本
+> docker pull registry.cn-shenzhen.aliyuncs.com/mox-lab/ink-speaker:abc1234
+> docker tag registry.cn-shenzhen.aliyuncs.com/mox-lab/ink-speaker:abc1234 \
+>              registry.cn-shenzhen.aliyuncs.com/mox-lab/ink-speaker:latest
+> docker compose --env-file .env.prod up -d --no-deps --force-recreate ink-speaker
+> ```
 
 ---
 

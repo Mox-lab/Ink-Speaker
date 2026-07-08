@@ -1,40 +1,27 @@
 #!/usr/bin/env bash
 # ============================================================
-# Ink Speaker 一键部署脚本(前后端整合版)
+# Ink Speaker 一键部署脚本(镜像拉取模式)
 # ============================================================
-# 功能:
-#   1. 拉取后端 + 前端两个仓库的最新代码
-#   2. 用 Docker 多阶段构建打两个镜像(后端 jar + 前端 nginx)
-#   3. 滚动重启 ink-speaker + nginx 容器(不动 postgres/redis)
-#   4. 健康检查,失败则回滚到上一版本镜像
+# 与之前版本的区别:
+#   - 不在服务器上 git pull 代码
+#   - 不在服务器上 docker build 镜像
+#   - 直接从阿里云 ACR 拉取已构建好的镜像,重启容器
+#
+# 镜像构建由 GitHub Actions 完成(见 .github/workflows/):
+#   - push 到 main → 自动构建 → 推到 ACR
+#   - 服务器跑本脚本 → docker pull → up -d
+#
+# 必需的 .env.prod 变量:
+#   - ACR_REGISTRY    阿里云 ACR 地址
+#   - ACR_NAMESPACE   命名空间
+#   - ACR_USERNAME    ACR 账号
+#   - ACR_PASSWORD    ACR 密码
 #
 # 用法:
-#   ./deploy.sh                  # 默认从 origin/main 拉取前后端
-#   ./deploy.sh dev              # 拉取 dev 分支
-#   ./deploy.sh --no-pull        # 不拉 git,只重新构建镜像
-#   ./deploy.sh --rollback       # 回滚到上一版本镜像
-#   ./deploy.sh --backend-only  # 只部署后端(前端不动)
-#   ./deploy.sh --frontend-only # 只部署前端(后端不动)
-#
-# 前置条件:
-#   - 已安装 docker / docker compose
-#   - 当前用户在 docker 组或用 sudo
-#   - 已准备 .env.prod 文件(由 .env.prod.example 拷贝并修改)
-#   - 后端仓库根目录有 Dockerfile,前端仓库 ink-speaker-web 也有 Dockerfile
-#
-# Git 仓库(都是 public,HTTPS 直接 clone,无需 SSH key / token):
-#   - 后端:从 .git/config 读取 origin url(回退默认值 https://github.com/Mox-lab/Ink-Speaker.git)
-#   - 前端:硬编码 https://github.com/Mox-lab/Ink-Speaker-Web.git
-#
-# 目录布局:
-#   /opt/ink-speaker/              ← 后端仓库(deploy.sh 所在目录)
-#     ├── Dockerfile
-#     ├── docker-compose.yml
-#     ├── .env.prod
-#     └── deploy.sh
-#   /opt/ink-speaker-web/          ← 前端仓库(由本脚本自动 clone)
-#     ├── Dockerfile
-#     └── nginx.conf
+#   ./deploy.sh                # 拉取 latest 镜像并重启
+#   ./deploy.sh --rollback     # 回滚到上一版本(本地 prev tag)
+#   ./deploy.sh --backend-only  # 只更新后端
+#   ./deploy.sh --frontend-only # 只更新前端
 # ============================================================
 set -euo pipefail
 
@@ -44,26 +31,14 @@ set -euo pipefail
 APP_NAME="ink-speaker"
 WEB_NAME="ink-speaker-web"
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
-WEB_DIR="${APP_DIR}-web"                          # /opt/ink-speaker-web
-
 ENV_FILE="${APP_DIR}/.env.prod"
 LOG_DIR="${APP_DIR}/deploy-logs"
 
-IMAGE_APP_LATEST="${APP_NAME}:latest"
-IMAGE_APP_BACKUP="${APP_NAME}:prev"
-IMAGE_WEB_LATEST="${WEB_NAME}:latest"
-IMAGE_WEB_BACKUP="${WEB_NAME}:prev"
-
-HEALTH_URL="http://localhost:9688/actuator/health"
-HEALTH_TIMEOUT=120                  # 健康检查最长等待秒数
-
-# Git 仓库地址(前后端都是 public 仓库,直接 HTTPS clone,无需 SSH key / token)
-# 从后端仓库的 .git/config 读取 origin url,前端仓库地址硬编码为 Mox-lab/Ink-Speaker-Web
-APP_GIT_URL=$(git -C "${APP_DIR}" config --get remote.origin.url 2>/dev/null || echo "https://github.com/Mox-lab/Ink-Speaker.git")
-WEB_GIT_URL="https://github.com/Mox-lab/Ink-Speaker-Web.git"
-
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
+
+HEALTH_URL="http://localhost:9688/actuator/health"
+HEALTH_TIMEOUT=180
 
 # ------------------------------------------------------------
 # 日志函数
@@ -72,7 +47,6 @@ log() {
     local level=$1; shift
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] $*" | tee -a "${LOG_FILE}"
 }
-
 info()  { log "INFO"  "$@"; }
 warn()  { log "WARN"  "$@"; }
 error() { log "ERROR" "$@" >&2; }
@@ -81,11 +55,10 @@ fatal() { error "$@"; exit 1; }
 trap 'error "部署失败,详见日志:${LOG_FILE}"' ERR
 
 # ------------------------------------------------------------
-# 前置检查
+# 前置检查 + 加载环境变量
 # ------------------------------------------------------------
 check_prerequisites() {
     info "前置检查..."
-    command -v git >/dev/null || fatal "未安装 git"
     command -v docker >/dev/null || fatal "未安装 docker"
     docker compose version >/dev/null 2>&1 || fatal "未安装 docker compose(v2)"
 
@@ -94,119 +67,73 @@ check_prerequisites() {
         请执行:cp .env.prod.example .env.prod 并填入真实密钥"
     fi
 
-    # 加载 .env.prod(用于读取 DB_PASSWORD / OPENAI_API_KEY 等业务密钥)
     set -a
     # shellcheck disable=SC1090
     source "${ENV_FILE}"
     set +a
 
+    # 校验 ACR 必填项
+    : "${ACR_REGISTRY:?在 .env.prod 中设置 ACR_REGISTRY}"
+    : "${ACR_NAMESPACE:?在 .env.prod 中设置 ACR_NAMESPACE}"
+    : "${ACR_USERNAME:?在 .env.prod 中设置 ACR_USERNAME}"
+    : "${ACR_PASSWORD:?在 .env.prod 中设置 ACR_PASSWORD}"
+
+    APP_IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/${APP_NAME}:latest"
+    WEB_IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/${WEB_NAME}:latest"
+
     info "前置检查通过"
-    info "  后端目录:${APP_DIR}"
-    info "  前端目录:${WEB_DIR}"
-    info "  后端仓库:${APP_GIT_URL}"
-    info "  前端仓库:${WEB_GIT_URL}"
+    info "  后端镜像:${APP_IMAGE}"
+    info "  前端镜像:${WEB_IMAGE}"
 }
 
 # ------------------------------------------------------------
-# 拉取最新代码(后端 + 前端)
+# 登录 ACR
 # ------------------------------------------------------------
-pull_latest() {
-    local branch="${1:-main}"
-    info "拉取最新代码 (分支:${branch})..."
-
-    # ---------- 后端 ----------
-    cd "${APP_DIR}"
-    info "  后端仓库:${APP_GIT_URL}"
-    if ! git diff --quiet || ! git diff --cached --quiet; then
-        warn "后端检测到本地改动,执行 stash"
-        git stash push -m "auto-stash before deploy $(date +%s)" || true
-    fi
-    git fetch origin --prune
-    git checkout "${branch}"
-    git reset --hard "origin/${branch}"
-    info "  后端已更新到提交:$(git rev-parse --short HEAD)"
-
-    # ---------- 前端 ----------
-    info "  前端仓库:${WEB_GIT_URL}"
-    if [[ ! -d "${WEB_DIR}/.git" ]]; then
-        info "  前端目录不存在,首次 clone..."
-        mkdir -p "$(dirname "${WEB_DIR}")"
-        git clone "${WEB_GIT_URL}" "${WEB_DIR}"
-        cd "${WEB_DIR}"
-        git checkout "${branch}" || warn "  前端无 ${branch} 分支,留在默认分支"
-    else
-        cd "${WEB_DIR}"
-        if ! git diff --quiet || ! git diff --cached --quiet; then
-            warn "  前端检测到本地改动,执行 stash"
-            git stash push -m "auto-stash before deploy $(date +%s)" || true
-        fi
-        git fetch origin --prune
-        git checkout "${branch}" 2>/dev/null || true
-        git reset --hard "origin/${branch}" 2>/dev/null || \
-            warn "  前端无 ${branch} 分支,保持当前提交"
-    fi
-    info "  前端已更新到提交:$(git rev-parse --short HEAD)"
+login_acr() {
+    info "登录阿里云 ACR..."
+    echo "${ACR_PASSWORD}" | docker login -u "${ACR_USERNAME}" --password-stdin "${ACR_REGISTRY}" \
+        >/dev/null 2>&1
+    info "  ACR 登录成功"
 }
 
 # ------------------------------------------------------------
-# 首次部署:确保前端仓库已 clone(--no-pull 时用)
+# 拉取最新镜像
 # ------------------------------------------------------------
-ensure_frontend_cloned() {
-    if [[ ! -d "${WEB_DIR}/.git" ]]; then
-        info "首次部署:clone 前端仓库..."
-        info "  仓库:${WEB_GIT_URL}"
-        info "  目标:${WEB_DIR}"
-        mkdir -p "$(dirname "${WEB_DIR}")"
-        git clone "${WEB_GIT_URL}" "${WEB_DIR}"
-        info "  前端已 clone,提交:$(git -C "${WEB_DIR}" rev-parse --short HEAD)"
-    else
-        info "前端目录已存在:${WEB_DIR}"
+pull_images() {
+    if [[ "${DEPLOY_BACKEND:-yes}" == "yes" ]]; then
+        info "拉取后端镜像..."
+        docker pull "${APP_IMAGE}" 2>&1 | tee -a "${LOG_FILE}"
+        info "  后端镜像拉取完成"
     fi
-}
-
-# ------------------------------------------------------------
-# 备份当前镜像(用于回滚)
-# ------------------------------------------------------------
-backup_image() {
-    info "备份当前镜像..."
-
     if [[ "${DEPLOY_FRONTEND:-yes}" == "yes" ]]; then
-        if docker image inspect "${IMAGE_WEB_LATEST}" >/dev/null 2>&1; then
-            docker tag "${IMAGE_WEB_LATEST}" "${IMAGE_WEB_BACKUP}"
-            info "  已备份 ${IMAGE_WEB_LATEST} → ${IMAGE_WEB_BACKUP}"
-        else
-            warn "  未找到 ${IMAGE_WEB_LATEST},跳过备份(首次部署)"
-        fi
+        info "拉取前端镜像..."
+        docker pull "${WEB_IMAGE}" 2>&1 | tee -a "${LOG_FILE}"
+        info "  前端镜像拉取完成"
     fi
+}
+
+# ------------------------------------------------------------
+# 备份当前镜像(用 tag 方式,本地保留 prev 版本)
+# ------------------------------------------------------------
+backup_images() {
+    info "备份当前镜像(用于回滚)..."
 
     if [[ "${DEPLOY_BACKEND:-yes}" == "yes" ]]; then
-        if docker image inspect "${IMAGE_APP_LATEST}" >/dev/null 2>&1; then
-            docker tag "${IMAGE_APP_LATEST}" "${IMAGE_APP_BACKUP}"
-            info "  已备份 ${IMAGE_APP_LATEST} → ${IMAGE_APP_BACKUP}"
+        if docker image inspect "${APP_IMAGE}" >/dev/null 2>&1; then
+            docker tag "${APP_IMAGE}" "${APP_IMAGE%latest}prev"
+            info "  后端已备份 → ${APP_IMAGE%latest}prev"
         else
-            warn "  未找到 ${IMAGE_APP_LATEST},跳过备份(首次部署)"
+            warn "  后端镜像不存在,跳过备份(首次部署)"
         fi
     fi
-}
 
-# ------------------------------------------------------------
-# 构建镜像
-# ------------------------------------------------------------
-build_image() {
-    # ---------- 前端 ----------
     if [[ "${DEPLOY_FRONTEND:-yes}" == "yes" ]]; then
-        info "构建前端镜像..."
-        cd "${WEB_DIR}"
-        docker build -t "${IMAGE_WEB_LATEST}" . 2>&1 | tee -a "${LOG_FILE}"
-        info "  前端镜像构建完成"
-    fi
-
-    # ---------- 后端 ----------
-    if [[ "${DEPLOY_BACKEND:-yes}" == "yes" ]]; then
-        info "构建后端镜像..."
-        cd "${APP_DIR}"
-        docker build -t "${IMAGE_APP_LATEST}" . 2>&1 | tee -a "${LOG_FILE}"
-        info "  后端镜像构建完成"
+        if docker image inspect "${WEB_IMAGE}" >/dev/null 2>&1; then
+            docker tag "${WEB_IMAGE}" "${WEB_IMAGE%latest}prev"
+            info "  前端已备份 → ${WEB_IMAGE%latest}prev"
+        else
+            warn "  前端镜像不存在,跳过备份(首次部署)"
+        fi
     fi
 }
 
@@ -217,7 +144,6 @@ restart_services() {
     info "重启服务..."
     cd "${APP_DIR}"
 
-    # 仅重启应用容器,不动 postgres/redis(避免数据中断)
     if [[ "${DEPLOY_BACKEND:-yes}" == "yes" ]]; then
         docker compose --env-file "${ENV_FILE}" up -d --no-deps --force-recreate "${APP_NAME}"
     fi
@@ -240,10 +166,10 @@ restart_services() {
     done
 
     if [[ "${elapsed}" -ge "${HEALTH_TIMEOUT}" ]]; then
-        fatal "后端健康检查超时,启动失败"
+        fatal "后端健康检查超时,启动失败
+        排查命令:docker compose logs --tail=200 ink-speaker"
     fi
 
-    # 前端 nginx 健康检查(快速,nginx 启动几秒就绪)
     if [[ "${DEPLOY_FRONTEND:-yes}" == "yes" ]]; then
         info "等待 nginx 健康检查..."
         local web_elapsed=0
@@ -255,32 +181,32 @@ restart_services() {
             sleep 2
             web_elapsed=$((web_elapsed + 2))
         done
-        warn "  nginx 健康检查 30s 内未通过,但容器可能仍在启动,继续..."
+        warn "  nginx 健康检查 30s 内未通过,继续..."
     fi
 }
 
 # ------------------------------------------------------------
-# 回滚
+# 回滚到上一版本
 # ------------------------------------------------------------
 rollback() {
     info "执行回滚..."
 
-    if docker image inspect "${IMAGE_APP_BACKUP}" >/dev/null 2>&1; then
-        docker tag "${IMAGE_APP_BACKUP}" "${IMAGE_APP_LATEST}"
+    if docker image inspect "${APP_IMAGE%latest}prev" >/dev/null 2>&1; then
+        docker tag "${APP_IMAGE%latest}prev" "${APP_IMAGE}"
         cd "${APP_DIR}"
         docker compose --env-file "${ENV_FILE}" up -d --no-deps --force-recreate "${APP_NAME}"
         info "  后端已回滚"
     else
-        warn "  未找到 ${IMAGE_APP_BACKUP},后端跳过回滚"
+        warn "  未找到后端备份镜像,跳过"
     fi
 
-    if docker image inspect "${IMAGE_WEB_BACKUP}" >/dev/null 2>&1; then
-        docker tag "${IMAGE_WEB_BACKUP}" "${IMAGE_WEB_LATEST}"
+    if docker image inspect "${WEB_IMAGE%latest}prev" >/dev/null 2>&1; then
+        docker tag "${WEB_IMAGE%latest}prev" "${WEB_IMAGE}"
         cd "${APP_DIR}"
         docker compose --env-file "${ENV_FILE}" up -d --no-deps --force-recreate nginx
         info "  前端已回滚"
     else
-        warn "  未找到 ${IMAGE_WEB_BACKUP},前端跳过回滚"
+        warn "  未找到前端备份镜像,跳过"
     fi
 
     info "回滚完成,等待健康检查..."
@@ -295,7 +221,7 @@ rollback() {
 }
 
 # ------------------------------------------------------------
-# 清理旧镜像(保留最新 + 备份)
+# 清理 dangling 镜像
 # ------------------------------------------------------------
 cleanup() {
     info "清理 dangling 镜像..."
@@ -306,11 +232,8 @@ cleanup() {
 # 主流程
 # ------------------------------------------------------------
 main() {
-    info "================ 启动部署(前后端整合) ================"
-    info "应用:后端 ${APP_NAME} + 前端 ${WEB_NAME}"
-    info "目录:后端 ${APP_DIR} / 前端 ${WEB_DIR}"
+    info "================ 启动部署(镜像拉取模式) ================"
 
-    # 解析参数
     DEPLOY_BACKEND="yes"
     DEPLOY_FRONTEND="yes"
 
@@ -321,10 +244,6 @@ main() {
                 rollback
                 exit 0
                 ;;
-            --no-pull)
-                NO_PULL="yes"
-                shift
-                ;;
             --backend-only)
                 DEPLOY_FRONTEND="no"
                 shift
@@ -334,32 +253,23 @@ main() {
                 shift
                 ;;
             *)
-                BRANCH="$1"
-                shift
+                fatal "未知参数:$1
+                用法:./deploy.sh [--rollback|--backend-only|--frontend-only]"
                 ;;
         esac
     done
 
     check_prerequisites
-
-    if [[ "${NO_PULL:-no}" != "yes" ]]; then
-        pull_latest "${BRANCH:-main}"
-    else
-        # --no-pull 模式:首次部署时前端目录可能还没 clone,需要兜底
-        if [[ "${DEPLOY_FRONTEND:-yes}" == "yes" ]]; then
-            ensure_frontend_cloned
-        fi
-    fi
-
-    backup_image
-    build_image
+    login_acr
+    backup_images
+    pull_images
     restart_services
     cleanup
 
     info "================ 部署成功 ================"
     info "日志:${LOG_FILE}"
     info "后端健康检查:${HEALTH_URL}"
-    info "前端访问入口:http://<服务器IP>/"
+    info "前端访问:http://<服务器IP>/"
 }
 
 main "$@"

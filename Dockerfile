@@ -16,6 +16,20 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 
 WORKDIR /workspace
 
+# 配置阿里云 Maven 镜像(国内构建必备,否则下依赖超时)
+RUN mkdir -p /root/.m2 && cat > /root/.m2/settings.xml <<'EOF'
+<settings>
+  <mirrors>
+    <mirror>
+      <id>aliyun</id>
+      <mirrorOf>central</mirrorOf>
+      <name>Aliyun Maven Mirror</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>
+EOF
+
 # 先拷贝 pom.xml,利用 Docker 层缓存加速依赖下载
 COPY pom.xml .
 RUN mvn -B dependency:go-offline -q || true
