@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ink.speaker.novel.mapper.NovelOutlineMapper">
+
+    <resultMap id="NovelOutlineMap" type="com.ink.speaker.novel.domain.entity.NovelOutline">
+        <id column="id" property="id"/>
+        <result column="novel_id" property="novelId"/>
+        <result column="title" property="title"/>
+        <result column="theme" property="theme"/>
+        <result column="chapters" property="chapters"/>
+        <result column="content" property="content"/>
+        <result column="version" property="version"/>
+        <result column="is_active" property="active"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, novel_id, title, theme, chapters, content, version, is_active,
+        created_at, updated_at
+    </sql>
+
+    <select id="listByNovelIdOrderByVersionDesc" resultMap="NovelOutlineMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel_outline
+        WHERE novel_id = #{novelId}
+        ORDER BY version DESC
+    </select>
+
+    <select id="findByNovelIdAndActiveTrue" resultMap="NovelOutlineMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel_outline
+        WHERE novel_id = #{novelId}
+          AND is_active = TRUE
+        LIMIT 1
+    </select>
+
+    <select id="findMaxVersion" resultType="java.lang.Integer">
+        SELECT MAX(version)
+        FROM novel_outline
+        WHERE novel_id = #{novelId}
+    </select>
+
+    <update id="clearActiveFlag">
+        UPDATE novel_outline
+        SET is_active = FALSE
+        WHERE novel_id = #{novelId}
+    </update>
+
+    <update id="updateActive">
+        UPDATE novel_outline
+        SET is_active = #{active}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

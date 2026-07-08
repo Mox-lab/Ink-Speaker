@@ -1,0 +1,77 @@
+# ============================================================
+# Ink Speaker - 开发环境配置(profile=dev)
+# ============================================================
+# 特点:
+#   1. Swagger UI 开放
+#   2. SQL/LLM Prompt 日志 DEBUG 级别(便于调试)
+#   3. 内置弱密钥兜底(未设置环境变量时也能启动,仅开发环境)
+#   4. HikariCP 连接池较小(单机开发够用)
+# ============================================================
+
+# 开发环境兜底值:仅在未设置环境变量时生效,生产环境绝不可使用
+# 真实密钥请通过环境变量 OPENAI_API_KEY / JWT_SECRET 注入
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: ${OPENAI_API_KEY:dev-only-key-please-set-OPENAI_API_KEY-env}
+      log-requests: true
+      log-responses: true
+  ollama:
+    chat-model:
+      log-requests: true
+      log-responses: true
+
+ink-speaker:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-jwt-secret-please-set-JWT_SECRET-env-32bytes}
+
+spring:
+  # JPA 调试
+  jpa:
+    show-sql: false              # 不打印 SQL,避免表名/字段名泄露到日志
+    properties:
+      hibernate:
+        format_sql: false
+
+  # 数据源(开发用小连接池)
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+
+# ============================================================
+# 日志:开发环境打开 DEBUG 看框架细节
+# ============================================================
+logging:
+  level:
+    root: INFO
+    dev.langchain4j: DEBUG       # 框架内部 Prompt/Tool 调用细节
+    com.ink.speaker: DEBUG       # 业务代码
+    org.springframework.security: DEBUG  # 鉴权链调试
+    org.hibernate.SQL: WARN      # 不打印 SQL,避免表名/字段名泄露
+    org.hibernate.orm.jdbc.bind: WARN
+    org.hibernate.orm.connections.pooling: WARN  # 不打印 DB URL/schema/catalog
+    org.flywaydb: INFO           # 关闭 Flyway 详细日志,避免 DB URL 打印
+    org.springframework.boot.autoconfigure.flyway: INFO
+
+# ============================================================
+# Swagger UI:开发环境开放
+# ============================================================
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    path: /v3/api-docs
+
+# ============================================================
+# Actuator:开发环境暴露所有端点(便于排查)
+# ============================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always       # 开发环境直接显示详情
+      show-components: always

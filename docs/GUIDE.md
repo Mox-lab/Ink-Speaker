@@ -1,4 +1,4 @@
-# Agent 开发详细指南(Novel Forge 版)
+# Agent 开发详细指南(Ink Speaker 版)
 
 > 本文面向**第一次接触 Agent 开发的 Java 工程师**。
 > 读完后你会明白:Agent 到底是什么、它和普通后端服务有什么区别、怎么用 Java 写一个 AI 小说生成 Agent。
@@ -214,7 +214,7 @@ WritingAssistantAgent agent = AiServices.builder(WritingAssistantAgent.class)
 ## 4. 项目结构详解
 
 ```
-novel-forge/
+ink-speaker/
 ├── pom.xml                              # Maven 依赖
 ├── README.md                            # 入门文档
 ├── docs/
@@ -457,7 +457,7 @@ langchain4j:
 logging:
   level:
     dev.langchain4j: DEBUG
-    com.novel.forge: DEBUG
+    com.ink.speaker: DEBUG
 ```
 
 启动后会看到完整的 Prompt 和 LLM 响应,排查问题非常方便。

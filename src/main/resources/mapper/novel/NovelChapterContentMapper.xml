@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ink.speaker.novel.mapper.NovelChapterContentMapper">
+
+    <resultMap id="NovelChapterContentMap" type="com.ink.speaker.novel.domain.entity.NovelChapterContent">
+        <id column="id" property="id"/>
+        <result column="novel_id" property="novelId"/>
+        <result column="outline_id" property="outlineId"/>
+        <result column="chapter_no" property="chapterNo"/>
+        <result column="title" property="title"/>
+        <result column="content" property="content"/>
+        <result column="word_count" property="wordCount"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, novel_id, outline_id, chapter_no, title, content, word_count,
+        session_id, created_at, updated_at
+    </sql>
+
+    <select id="listByNovelIdOrderByChapterNoAsc" resultMap="NovelChapterContentMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel_chapter_content
+        WHERE novel_id = #{novelId}
+        ORDER BY chapter_no ASC
+    </select>
+
+    <select id="findByNovelIdAndChapterNo" resultType="com.ink.speaker.novel.domain.entity.NovelChapterContent"
+            resultMap="NovelChapterContentMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel_chapter_content
+        WHERE novel_id = #{novelId}
+          AND chapter_no = #{chapterNo}
+        LIMIT 1
+    </select>
+
+    <select id="findFirstByNovelIdOrderByChapterNoDesc" resultMap="NovelChapterContentMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel_chapter_content
+        WHERE novel_id = #{novelId}
+        ORDER BY chapter_no DESC
+        LIMIT 1
+    </select>
+
+</mapper>

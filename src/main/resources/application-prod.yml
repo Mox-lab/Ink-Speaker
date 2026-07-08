@@ -1,0 +1,98 @@
+# ============================================================
+# Ink Speaker - 生产环境配置(profile=prod)
+# ============================================================
+# 特点:
+#   1. Swagger UI 关闭(避免暴露接口结构)
+#   2. 日志收敛到 INFO/WARN(减少日志量)
+#   3. Actuator 端点收敛(仅必要端点)
+#   4. HikariCP 连接池放大(应对并发)
+#   5. 所有敏感字段强制要求环境变量,无兜底值
+# ============================================================
+
+spring:
+  # JPA 生产配置
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  # 数据源(生产用大连接池)
+  datasource:
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+# ============================================================
+# 日志:生产收敛到 INFO 以上,减少日志量
+# ============================================================
+logging:
+  level:
+    root: WARN
+    dev.langchain4j: WARN        # 框架 WARN 以上
+    com.ink.speaker: INFO        # 业务 INFO 以上
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+    org.hibernate.orm.connections.pooling: WARN  # 不打印 DB URL/schema/catalog
+    org.flywaydb: WARN           # 不打印 DB URL
+  pattern:
+    # 生产用 JSON 结构化日志(便于 ELK/Loki 采集)
+    console: "{\"time\":\"%d{yyyy-MM-dd HH:mm:ss.SSS}\",\"thread\":\"%thread\",\"level\":\"%-5level\",\"logger\":\"%logger{36}\",\"msg\":\"%msg\"}%n"
+
+# ============================================================
+# LangChain4j:生产关闭请求/响应日志(避免泄露 Prompt)
+# ============================================================
+langchain4j:
+  open-ai:
+    chat-model:
+      log-requests: false
+      log-responses: false
+      # 生产可切换到更稳定的模型(由环境变量覆盖)
+      # model-name: ${LLM_MODEL_NAME:glm-5.2}
+      # temperature: 0.85
+  ollama:
+    chat-model:
+      log-requests: false
+      log-responses: false
+
+# ============================================================
+# Swagger UI:生产关闭(避免接口结构泄露)
+# ============================================================
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+# ============================================================
+# Actuator:生产仅暴露必要端点
+# ============================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+        exclude: env,configprops,loggers,threaddump,heapdump
+  endpoint:
+    health:
+      show-details: when-authorized  # 未授权不暴露 DB/Redis 连接信息
+      show-components: when-authorized
+
+# ============================================================
+# Resilience4j:生产可调高并发(由部署规模决定)
+# ============================================================
+resilience4j:
+  bulkhead:
+    instances:
+      llm-call:
+        max-concurrent-calls: 16   # 生产翻倍
+        max-wait-duration: 10s
+  ratelimiter:
+    instances:
+      llm-call:
+        limit-for-period: 20       # 生产调高(根据 LLM 配额)
+        limit-refresh-period: 1s

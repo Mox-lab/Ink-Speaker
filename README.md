@@ -1,4 +1,4 @@
-# Novel Forge 项目
+# Ink Speaker 项目
 
 > 基于 **Spring Boot 3 + LangChain4j** 的 AI 小说生成 Agent 入门示例
 > 面向 Java 开发者,带你 30 分钟搞懂 Agent 开发的核心概念与落地方式。
@@ -46,14 +46,14 @@ langchain4j:
 ### 3. 启动
 
 ```bash
-cd novel-forge
+cd ink-speaker
 mvn spring-boot:run
 ```
 
 看到下面的输出就成功了:
 
 ```
-Novel Forge 启动成功!
+Ink Speaker 启动成功!
 ```
 
 ### 4. 体验

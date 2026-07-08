@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ink.speaker.novel.mapper.NovelMapper">
+
+    <resultMap id="NovelMap" type="com.ink.speaker.novel.domain.entity.Novel">
+        <id column="id" property="id"/>
+        <result column="title" property="title"/>
+        <result column="author" property="author"/>
+        <result column="description" property="description"/>
+        <result column="owner_id" property="ownerId"/>
+        <result column="shared_for_reference" property="sharedForReference"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, title, author, description, owner_id, shared_for_reference, created_at, updated_at
+    </sql>
+
+    <select id="findByTitle" resultMap="NovelMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel
+        WHERE title = #{title}
+        LIMIT 1
+    </select>
+
+    <!-- R5 用户隔离:列出指定用户的全部小说 -->
+    <select id="listByOwnerId" resultMap="NovelMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel
+        WHERE owner_id = #{ownerId}
+        ORDER BY updated_at DESC
+    </select>
+
+    <!-- R5 用户隔离:按 id + ownerId 双重过滤,不属于该用户时返回 null -->
+    <select id="findByIdAndOwner" resultMap="NovelMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM novel
+        WHERE id = #{id}
+          AND owner_id = #{ownerId}
+        LIMIT 1
+    </select>
+
+    <!-- R5 跨小说参考:列出公开到公共参考池的小说(不含 owner_id 等敏感字段) -->
+    <select id="listSharedForReference" resultMap="NovelMap">
+        SELECT id, title, author, description, shared_for_reference, created_at, updated_at
+        FROM novel
+        WHERE shared_for_reference = true
+        ORDER BY updated_at DESC
+    </select>
+
+</mapper>

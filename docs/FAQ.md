@@ -156,7 +156,7 @@ curl http://localhost:11434/api/tags
 **解决**:
 - 调整切片大小(300~500 字符为佳);
 - 用 `/api/lore/search` 接口调试检索结果;
-- 调大 `novel.rag-top-k`(如 5~8)。
+- 调大 `ink-speaker.rag-top-k`(如 5~8)。
 
 ---
 

@@ -1,75 +1,223 @@
 # ============================================================
-# Novel Forge 配置文件 - AI 小说生成 Agent
+# Ink Speaker 配置文件 - AI 小说生成 Agent
 # ============================================================
 # 说明:
-#   1. 项目同时配置了 OpenAI 兼容接口与 Ollama 本地模型。
-#   2. 默认使用 OpenAI 兼容接口(以 DeepSeek 为例);若想切换为 Ollama,
-#      修改下面的 spring.profiles.active 即可。
-#   3. 生产环境请把 API Key 放到环境变量或配置中心,不要硬编码。
-#   4. 小说创作对 maxTokens 需求较大,默认调高到 4000。
+#   1. 本文件为公共配置,所有环境共享。
+#   2. 环境差异通过 profile 切换:dev(默认) / prod
+#   3. 敏感字段用 ENC(...) 包裹,密钥来自 JASYPT_KEY 环境变量
+#   4. 业务密钥/密码/Token 必须用环境变量注入,不硬编码
 # ============================================================
 
+# ============================================================
+# 1. Web 容器(Tomcat)
+# ============================================================
 server:
-  port: 9688
+  port: ${SERVER_PORT:9688}
+  shutdown: graceful            # 优雅停机:等待进行中的章节生成完成
+  tomcat:
+    threads:
+      max: 200                  # 最大工作线程
+      min-spare: 10
+    accept-count: 100
+    connection-timeout: 60s
 
+# ============================================================
+# 2. Spring 框架核心
+# ============================================================
 spring:
   application:
-    name: novel-forge
-  # 通过 Profile 切换模型 Provider
+    name: ink-speaker
+
+  # 关闭启动信息打印(默认会输出 Java 版本/PID/用户名/工作目录/类路径,含敏感信息)
+  main:
+    log-startup-info: false
+
+  # 通过 Profile 切换模型 Provider(dev/prod 公用,实际模型由各 profile 覆盖)
   profiles:
-    active: openai   # 可选值: openai | ollama
-  # 数据库
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # ------------------------------------------------------------
+  # 2.1 数据源(HikariCP,Spring Boot 默认连接池)
+  # ------------------------------------------------------------
   datasource:
-    url: jdbc:postgresql://localhost:5432/novel_forge
-    username: postgres
-    password:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ink_speaker}
+    username: ${DB_USERNAME:postgres}
+    # 生产环境用 ENC(...) 包裹,Jasypt 在启动时解密;dev 直接用环境变量
+    password: ${DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: InkSpeakerHikariCP
+
+  # ------------------------------------------------------------
+  # 2.2 JPA 配置
+  # ------------------------------------------------------------
   jpa:
     hibernate:
-      ddl-auto: update        # 业务表自动建表;向量表由 LangChain4j 建
+      # 关闭自动建表,改由 Flyway 统一管理 schema
+      ddl-auto: validate
     show-sql: false
+    open-in-view: false         # 关闭 OSIV,避免 Controller 层持有数据库连接
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        # Hibernate 7.x 自动检测 dialect,无需显式指定(显式指定会触发 HHH90000025 警告)
+        format_sql: false
+        jdbc.batch_size: 50     # 批量写(章节段落、向量入库用)
+        order_inserts: true
+        order_updates: true
 
-# ------------------------------------------------------------
-# OpenAI 兼容接口配置(DeepSeek 示例)
-# ------------------------------------------------------------
-# DeepSeek 官网: https://platform.deepseek.com
-# base-url: DeepSeek 的 OpenAI 兼容端点
-# 其他兼容服务(改 base-url 即可):
-#   OpenAI:    https://api.openai.com/v1
-#   通义千问:   https://dashscope.aliyuncs.com/compatible-mode/v1
-#   Moonshot:  https://api.moonshot.cn/v1
-#   智谱 GLM:  https://open.bigmodel.cn/api/paas/v4
-# ------------------------------------------------------------
+  # ------------------------------------------------------------
+  # 2.3 Flyway 数据库版本化迁移
+  # ------------------------------------------------------------
+  # 第 9 阶段整合:V1~V7 已合并为 V1__init_schema.sql,checksum 与历史不一致
+  # 已部署的旧环境需先执行 flyway repair 或清理 flyway_schema_history,
+  # 全新部署直接执行 V1 即可建立完整 schema
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true   # 已有库时自动建立 baseline
+    baseline-version: 0
+    validate-on-migrate: false  # 整合后 checksum 变化,关闭校验避免启动失败
+    clean-disabled: true        # 生产禁用 flyway clean,避免误删表
+
+  # ------------------------------------------------------------
+  # 2.4 Redis(L2 缓存 + 分布式锁 + ShedLock 后端)
+  # ------------------------------------------------------------
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 30000ms
+        shutdown-timeout: 200ms
+
+  # ------------------------------------------------------------
+  # 2.5 Jackson 序列化
+  # ------------------------------------------------------------
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+    default-property-inclusion: non_null
+
+  # ------------------------------------------------------------
+  # 2.6 异步任务线程池(Spring Boot 默认 @Async 用,本项目的核心池见 ink-speaker.async)
+  # ------------------------------------------------------------
+  task:
+    execution:
+      pool:
+        core-size: ${ASYNC_CORE_SIZE:4}
+        max-size: ${ASYNC_MAX_SIZE:16}
+        queue-capacity: ${ASYNC_QUEUE_CAPACITY:100}
+        keep-alive: 60s
+      thread-name-prefix: ink-async-
+    scheduling:
+      pool:
+        size: 4
+      thread-name-prefix: ink-sched-
+
+# ============================================================
+# 3. MyBatis-Plus(DAO 层,XML Mapper 扫描)
+# ============================================================
+# 注意:mybatis-plus 配置前缀为顶级 mybatis-plus,不可放在 spring 下
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.ink.speaker.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    default-fetch-size: 100
+    default-statement-timeout: 30
+  global-config:
+    banner: false
+    db-config:
+      id-type: AUTO
+      logic-delete-field: deleted
+      logic-not-delete-value: 0
+      logic-delete-value: 1
+
+# ============================================================
+# 4. Actuator 健康监控 + Prometheus 指标
+# ============================================================
+management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:9689}  # 独立管理端口,与业务端口隔离
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,configprops,loggers
+        exclude: threaddump,heapdump
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized  # 未授权时只看状态,授权后看详情
+      show-components: when-authorized
+      probes:
+        enabled: true            # 暴露 liveness/statefulness 探针(K8s 友好)
+    prometheus:
+      access: read-only
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+    os:
+      enabled: true
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5,0.9,0.95,0.99
+    tags:
+      application: ${spring.application.name}
+
+# ============================================================
+# 5. OpenAI 兼容接口配置(模型/温度由 profile 覆盖)
+# ============================================================
 langchain4j:
   open-ai:
     chat-model:
-      # 从环境变量读取,避免泄露;请勿在此硬编码真实 key
-      api-key: ${OPENAI_API_KEY:sk-LFeVy00VsFH3kEAq05BcmH4JqK8xcmQmWzcQzmvnR3lR1qXG}
-      base-url: https://aihub.bielcrystal.com/v1
-      model-name: glm-5.2
-      temperature: 0.85       # 小说创作需要更高 temperature,增加创意
-      max-tokens: 4000        # 单次生成篇幅更大,小说章节需要足够 token
-      timeout: PT120S         # 长文生成慢,超时调长
-      log-requests: true
-      log-responses: true
+      # API key 必须由环境变量注入,不留硬编码默认值(参见 hardcode-detector 规则)
+      # 开发环境若无该变量,可在 application-dev.yml 中用 ${OPENAI_API_KEY:dev-only-key} 兜底
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
+      model-name: ${OPENAI_MODEL_NAME:deepseek-v4-flash}
+      temperature: ${OPENAI_TEMPERATURE:0.85}    # 小说创作需要更高 temperature,增加创意
+      max-tokens: ${OPENAI_MAX_TOKENS:5000}      # 控制单次生成耗时 < 60s,避免上游 nginx 504
+      timeout: ${OPENAI_TIMEOUT:PT90S}           # 客户端超时略大于上游 nginx 60s
+      log-requests: false     # 由 profile 覆盖(dev=true,prod=false)
+      log-responses: false
   ollama:
     chat-model:
-      base-url: http://localhost:11434
-      # 推荐用 qwen2.5:14b 或更大模型,小说创作质量更好
-      # 需要先在 Ollama 中拉取模型: ollama pull qwen2.5:14b
-      model-name: qwen2.5:14b
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_MODEL_NAME:qwen2.5:14b}
       temperature: 0.85
       timeout: PT120S
-      log-requests: true
-      log-responses: true
+      log-requests: false
+      log-responses: false
 
-# ------------------------------------------------------------
-# 小说生成应用配置
-# ------------------------------------------------------------
-novel:
+# ============================================================
+# 6. Ink Speaker 业务配置
+# ============================================================
+ink-speaker:
+  # ------------------------------------------------------------
+  # 6.1 基础参数
+  # ------------------------------------------------------------
   # 小说设定库目录(世界观/人物/大纲等参考文档)
   knowledge-base-dir: ./knowledge-base
   # 嵌入维度(all-minilm-l6-v2 模型为 384 维)
@@ -83,14 +231,177 @@ novel:
   # 当前小说 ID(预留多本小说切换,默认 1)
   current-id: 1
 
-  # 新增:pgvector 向量库配置(自定义命名空间,代码里 @Value 读)
-  pgvector:
-    table: langchain4j_embeddings   # 表名
-    dimension: 384                   # 必须与 embedding 模型一致
-    use-index: true                  # 启用 HNSW 索引,加速检索
-    index-list-size: 100             # IVFFlat 的 lists 参数,经验值 sqrt(行数);几千~几万条用 100
+  # ------------------------------------------------------------
+  # 6.2 自定义异步线程池(第 3 阶段新增)
+  # - sseStreamExecutor: SSE 流式任务,长耗时,用 AbortPolicy 快速失败
+  # - novelAsyncExecutor: @Async 业务任务,用 CallerRunsPolicy 形成背压
+  # ------------------------------------------------------------
+  async:
+    sse:
+      core-size: ${SSE_CORE_SIZE:4}
+      max-size: ${SSE_MAX_SIZE:16}
+      queue-capacity: ${SSE_QUEUE_CAPACITY:64}
+      keepalive-sec: ${SSE_KEEPALIVE_SEC:60}
+    novel:
+      core-size: ${NOVEL_ASYNC_CORE_SIZE:4}
+      max-size: ${NOVEL_ASYNC_MAX_SIZE:16}
+      queue-capacity: ${NOVEL_ASYNC_QUEUE_CAPACITY:100}
+      keepalive-sec: ${NOVEL_ASYNC_KEEPALIVE_SEC:60}
 
+  # ------------------------------------------------------------
+  # 6.3 记忆系统(P0 新增 / 第 2 阶段升级为 TokenWindow)
+  # ------------------------------------------------------------
+  memory:
+    window-size: 20              # [已废弃,保留兼容] 单会话消息条数上限,TokenWindow 启用后不再生效
+    token-budget: ${MEMORY_TOKEN_BUDGET:6000}  # 单会话 token 窗口上限,超出后老消息被 TokenWindow 自动淘汰
+    compact-target: ${MEMORY_COMPACT_TARGET:3000}  # compact 后压缩到的目标 token 数(ContextCompactor 使用)
+    extract-on-chapter-save: true # 章节保存时自动抽取人物状态/伏笔写回业务表
+
+  # ------------------------------------------------------------
+  # 6.4 Skill 系统(P1 新增)
+  # ------------------------------------------------------------
+  skill:
+    enabled: true                # 是否启用 Skill 自动激活
+    default-skill: default       # 默认 Skill 名称
+
+  # ------------------------------------------------------------
+  # 6.5 Agent 协作(P1 新增)
+  # ------------------------------------------------------------
+  coordinator:
+    review-enabled: true         # 是否启用 ReviewAgent 异步审查
+    sub-agent-timeout: PT60S     # 子 Agent 超时
+
+  # ------------------------------------------------------------
+  # 6.6 MCP 外部知识源(P2 新增)
+  # 默认 enabled=false,走 NoOp 实现,不依赖 langchain4j-mcp
+  # 启用步骤参见 McpProperties 类注释
+  # ------------------------------------------------------------
+  mcp:
+    enabled: false
+    timeout: PT30S
+    servers:
+      - name: default
+        transport: http          # http / stdio
+        url:                     # HTTP SSE URL,如 http://localhost:8080/sse
+        enabled: false
+
+  # ------------------------------------------------------------
+  # 6.7 pgvector 向量库
+  # ------------------------------------------------------------
+  pgvector:
+    table: langchain4j_embeddings
+    dimension: 384
+    use-index: true
+    index-list-size: 100
+
+  # ------------------------------------------------------------
+  # 6.8 JWT 鉴权(配合 spring-boot-starter-security 使用)
+  # secret 必须通过环境变量注入,无兜底值;启动时由 JwtUtil 校验非空与最小长度
+  # 开发环境如需本地启动,请在 application-dev.yml 中用 ${JWT_SECRET:dev-only-secret} 兜底
+  # ------------------------------------------------------------
+  jwt:
+    secret: ${JWT_SECRET:}
+    issuer: ${JWT_ISSUER:ink-speaker}
+    access-token-ttl: ${JWT_ACCESS_TTL:PT2H}    # 访问令牌 2 小时
+    refresh-token-ttl: ${JWT_REFRESH_TTL:P7D}   # 刷新令牌 7 天
+
+  # ------------------------------------------------------------
+  # 6.9 缓存(L1 Caffeine + L2 Redis)
+  # L1:JVM 内存,按权重(字节数)限制总量,JVM heap > 85% 时主动清理
+  # L2:Redis,跨实例复用(第 8 阶段)
+  # ------------------------------------------------------------
+  cache:
+    # L1 LLM 响应缓存
+    llm-cache-ttl: ${LLM_CACHE_TTL:PT24H}  # L1 TTL:同一 prompt 24h 内复用结果
+    max-weight-bytes: ${LLM_CACHE_MAX_WEIGHT:52428800}  # L1 缓存总权重上限(50MB)
+    cache-null: false            # 不缓存空结果,避免缓存穿透放大
+    # 第 6 阶段:工具调用结果缓存(短 TTL,避免脏数据)
+    tool-ttl-sec: ${TOOL_CACHE_TTL_SEC:300}    # 工具结果 TTL 5min(单章节生成周期内复用)
+    tool-max-size: ${TOOL_CACHE_MAX_SIZE:2000} # 每个工具缓存最大条目数
+    # 第 8 阶段:L2 Redis 缓存
+    l2-prefix: ${LLM_CACHE_L2_PREFIX:ink:llm:}  # L2 key 前缀
+    l2-ttl: ${LLM_CACHE_L2_TTL:PT24H}           # L2 TTL(默认与 L1 一致)
+
+# ============================================================
+# 7. Resilience4j 弹性容错(dev/prod 共享,生产可按需覆盖)
+# ============================================================
+resilience4j:
+  circuitbreaker:
+    instances:
+      llm-call:                  # LLM 调用熔断器
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50      # 失败率 ≥ 50% 触发熔断
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+  ratelimiter:
+    instances:
+      llm-call:                  # LLM 调用限流:5 req/s(避免触发上游限流)
+        limit-for-period: 5
+        limit-refresh-period: 1s
+        timeout-duration: 10s
+        register-health-indicator: true
+  retry:
+    instances:
+      llm-call:                  # LLM 网络抖动重试
+        max-attempts: 3
+        wait-duration: 1s
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+  bulkhead:
+    instances:
+      llm-call:                  # LLM 并发隔离:最多 8 个并发,队列 32
+        max-concurrent-calls: 8
+        max-wait-duration: 5s
+
+# ============================================================
+# 8. ShedLock 集群定时任务锁
+# ============================================================
+shedlock:
+  lock-provider: redis           # 使用 Redis 作为锁后端(无需建表)
+
+# ============================================================
+# 9. SpringDoc OpenAPI 3 文档(是否启用由 profile 覆盖)
+# ============================================================
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true                # dev=true, prod=false(在 prod profile 覆盖)
+    operations-sorter: method
+    tags-sorter: alpha
+  packages-to-scan: com.ink.speaker.**.controller
+  info:
+    title: Ink Speaker API
+    version: 1.0.0
+    description: 基于 LangChain4j 的 AI 小说生成 Agent
+
+# ============================================================
+# 10. Jasypt 配置加密
+# ============================================================
+jasypt:
+  encryptor:
+    password: ${JASYPT_KEY:ink-speaker-dev-key}   # 生产环境必须从环境变量注入
+    algorithm: PBEWITHHMACSHA512ANDAES_256
+    iv-generator-classname: org.jasypt.iv.RandomIvGenerator
+    property:
+      prefix: "ENC("
+      suffix: ")"
+
+# ============================================================
+# 11. 日志配置(级别由 profile 覆盖)
+# ============================================================
 logging:
   level:
-    dev.langchain4j: DEBUG
-    com.novel.forge: DEBUG
+    root: INFO
+    dev.langchain4j: INFO        # dev=DEBUG, prod=WARN
+    com.ink.speaker: INFO        # dev=DEBUG, prod=INFO
+    org.springframework.security: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ink.speaker.auth.mapper.UserMapper">
+
+    <resultMap id="RoleMap" type="com.ink.speaker.auth.domain.entity.Role">
+        <id column="r_id" property="id"/>
+        <result column="r_name" property="name"/>
+        <result column="r_created_at" property="createdAt"/>
+        <result column="r_updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="UserMap" type="com.ink.speaker.auth.domain.entity.User">
+        <id column="u_id" property="id"/>
+        <result column="u_username" property="username"/>
+        <result column="u_password" property="password"/>
+        <result column="u_enabled" property="enabled"/>
+        <result column="u_created_at" property="createdAt"/>
+        <result column="u_updated_at" property="updatedAt"/>
+        <collection property="roles" resultMap="RoleMap"/>
+    </resultMap>
+
+    <resultMap id="SimpleUserMap" type="com.ink.speaker.auth.domain.entity.User">
+        <id column="id" property="id"/>
+        <result column="username" property="username"/>
+        <result column="password" property="password"/>
+        <result column="enabled" property="enabled"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, username, password, enabled, created_at, updated_at
+    </sql>
+
+    <select id="findByUsername" resultMap="SimpleUserMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM users
+        WHERE username = #{username}
+        LIMIT 1
+    </select>
+
+    <select id="findByUsernameWithRoles" resultMap="UserMap">
+        SELECT
+            u.id           AS u_id,
+            u.username     AS u_username,
+            u.password     AS u_password,
+            u.enabled      AS u_enabled,
+            u.created_at   AS u_created_at,
+            u.updated_at   AS u_updated_at,
+            r.id           AS r_id,
+            r.name         AS r_name,
+            r.created_at   AS r_created_at,
+            r.updated_at   AS r_updated_at
+        FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r       ON r.id       = ur.role_id
+        WHERE u.username = #{username}
+    </select>
+
+    <select id="countByUsername" resultType="long">
+        SELECT COUNT(1)
+        FROM users
+        WHERE username = #{username}
+    </select>
+
+</mapper>
