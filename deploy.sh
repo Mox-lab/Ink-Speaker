@@ -1,25 +1,19 @@
 #!/usr/bin/env bash
 # ============================================================
-# Ink Speaker 一键部署脚本(镜像拉取模式)
+# Ink Speaker 一键部署脚本(纯镜像拉取模式)
 # ============================================================
-# 与之前版本的区别:
-#   - 不在服务器上 git pull 代码
-#   - 不在服务器上 docker build 镜像
-#   - 直接从阿里云 ACR 拉取已构建好的镜像,重启容器
+# 特点:
+#   - 不需要源代码(服务器无 src/ / pom.xml / package.json)
+#   - 不需要 git pull(部署文件由 scp 上传,或从 release 下载)
+#   - 直接从阿里云 ACR 拉取已构建镜像,30 秒完成部署
 #
-# 镜像构建由 GitHub Actions 完成(见 .github/workflows/):
-#   - push 到 main → 自动构建 → 推到 ACR
-#   - 服务器跑本脚本 → docker pull → up -d
-#
-# 必需的 .env.prod 变量:
-#   - ACR_REGISTRY    阿里云 ACR 地址
-#   - ACR_NAMESPACE   命名空间
-#   - ACR_USERNAME    ACR 账号
-#   - ACR_PASSWORD    ACR 密码
+# 前置条件:
+#   - 已安装 docker / docker compose
+#   - 当前目录有 docker-compose.yml + .env.prod
 #
 # 用法:
 #   ./deploy.sh                # 拉取 latest 镜像并重启
-#   ./deploy.sh --rollback     # 回滚到上一版本(本地 prev tag)
+#   ./deploy.sh --rollback     # 回滚到上一版本
 #   ./deploy.sh --backend-only  # 只更新后端
 #   ./deploy.sh --frontend-only # 只更新前端
 # ============================================================
@@ -67,12 +61,17 @@ check_prerequisites() {
         请执行:cp .env.prod.example .env.prod 并填入真实密钥"
     fi
 
+    if [[ ! -f "${APP_DIR}/docker-compose.yml" ]]; then
+        fatal "缺少 docker-compose.yml 文件,请确认部署文件齐全"
+    fi
+
     set -a
     # shellcheck disable=SC1090
     source "${ENV_FILE}"
     set +a
 
-    # 校验 ACR 必填项
+    # 校验必填项
+    : "${DATA_DIR:?在 .env.prod 中设置 DATA_DIR}"
     : "${ACR_REGISTRY:?在 .env.prod 中设置 ACR_REGISTRY}"
     : "${ACR_NAMESPACE:?在 .env.prod 中设置 ACR_NAMESPACE}"
     : "${ACR_USERNAME:?在 .env.prod 中设置 ACR_USERNAME}"
@@ -84,6 +83,21 @@ check_prerequisites() {
     info "前置检查通过"
     info "  后端镜像:${APP_IMAGE}"
     info "  前端镜像:${WEB_IMAGE}"
+    info "  数据目录:${DATA_DIR}"
+}
+
+# ------------------------------------------------------------
+# 创建数据目录(确保 bind mount 不会因为宿主机目录不存在而用 Docker 自动创建的 root 权限目录)
+# ------------------------------------------------------------
+ensure_data_dirs() {
+    info "创建数据目录..."
+    mkdir -p "${DATA_DIR}/postgres"
+    mkdir -p "${DATA_DIR}/logs"
+    mkdir -p "${DATA_DIR}/knowledge-base"
+    chmod 755 "${DATA_DIR}"
+    info "  ${DATA_DIR}/postgres"
+    info "  ${DATA_DIR}/logs"
+    info "  ${DATA_DIR}/knowledge-base"
 }
 
 # ------------------------------------------------------------
@@ -232,7 +246,7 @@ cleanup() {
 # 主流程
 # ------------------------------------------------------------
 main() {
-    info "================ 启动部署(镜像拉取模式) ================"
+    info "================ 启动部署(纯镜像拉取模式) ================"
 
     DEPLOY_BACKEND="yes"
     DEPLOY_FRONTEND="yes"
@@ -260,6 +274,7 @@ main() {
     done
 
     check_prerequisites
+    ensure_data_dirs
     login_acr
     backup_images
     pull_images

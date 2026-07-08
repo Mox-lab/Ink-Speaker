@@ -41,7 +41,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"            # 仅本机访问,不对外暴露
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ${DATA_DIR:-/opt/ink-speaker/data}/postgres:/var/lib/postgresql/data
     command:
       - "postgres"
       - "-c"
@@ -144,8 +144,8 @@ services:
       - "127.0.0.1:9688:9688"            # 仅本机访问,由 nginx 反代对外
       - "127.0.0.1:9689:9689"            # Actuator 仅本机(运维 SSH 隧道访问)
     volumes:
-      - app_logs:/app/logs
-      - app_knowledge_base:/app/knowledge-base
+      - ${DATA_DIR:-/opt/ink-speaker/data}/logs:/app/logs
+      - ${DATA_DIR:-/opt/ink-speaker/data}/knowledge-base:/app/knowledge-base
     deploy:
       resources:
         limits:
@@ -183,14 +183,6 @@ services:
       start_period: 10s
     networks:
       - ink-net
-
-volumes:
-  postgres_data:
-    driver: local
-  app_logs:
-    driver: local
-  app_knowledge_base:
-    driver: local
 
 networks:
   ink-net:
