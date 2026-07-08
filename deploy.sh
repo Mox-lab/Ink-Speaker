@@ -149,6 +149,22 @@ pull_latest() {
 }
 
 # ------------------------------------------------------------
+# 首次部署:确保前端仓库已 clone(--no-pull 时用)
+# ------------------------------------------------------------
+ensure_frontend_cloned() {
+    if [[ ! -d "${WEB_DIR}/.git" ]]; then
+        info "首次部署:clone 前端仓库..."
+        info "  仓库:${WEB_GIT_URL}"
+        info "  目标:${WEB_DIR}"
+        mkdir -p "$(dirname "${WEB_DIR}")"
+        git clone "${WEB_GIT_URL}" "${WEB_DIR}"
+        info "  前端已 clone,提交:$(git -C "${WEB_DIR}" rev-parse --short HEAD)"
+    else
+        info "前端目录已存在:${WEB_DIR}"
+    fi
+}
+
+# ------------------------------------------------------------
 # 备份当前镜像(用于回滚)
 # ------------------------------------------------------------
 backup_image() {
@@ -328,6 +344,11 @@ main() {
 
     if [[ "${NO_PULL:-no}" != "yes" ]]; then
         pull_latest "${BRANCH:-main}"
+    else
+        # --no-pull 模式:首次部署时前端目录可能还没 clone,需要兜底
+        if [[ "${DEPLOY_FRONTEND:-yes}" == "yes" ]]; then
+            ensure_frontend_cloned
+        fi
     fi
 
     backup_image
