@@ -62,8 +62,10 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image }}:latest
             ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha_short }}
-          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache
-          cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max
+          # 注意:阿里云 ACR 个人版不支持 buildkit cacheconfig manifest,
+          # 不能用 cache-from/cache-to type=registry + mode=max,这里用 inline 内联缓存
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:latest
+          cache-to: type=inline
 
       - name: Summary
         run: |

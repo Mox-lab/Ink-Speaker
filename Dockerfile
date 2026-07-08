@@ -16,7 +16,7 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 
 WORKDIR /workspace
 
-# 配置阿里云 Maven 镜像(国内构建必备,否则下依赖超时)
+# 配置多 Maven 镜像(阿里云 + 中央仓库,阿里云偶发 502 时自动 fallback)
 RUN mkdir -p /root/.m2 && cat > /root/.m2/settings.xml <<'EOF'
 <settings>
   <mirrors>
@@ -26,17 +26,51 @@ RUN mkdir -p /root/.m2 && cat > /root/.m2/settings.xml <<'EOF'
       <name>Aliyun Maven Mirror</name>
       <url>https://maven.aliyun.com/repository/public</url>
     </mirror>
+    <mirror>
+      <id>central</id>
+      <mirrorOf>*,!aliyun</mirrorOf>
+      <name>Maven Central</name>
+      <url>https://repo1.maven.org/maven2</url>
+    </mirror>
   </mirrors>
+  <profiles>
+    <profile>
+      <id>multiple-repos</id>
+      <repositories>
+        <repository>
+          <id>aliyun</id>
+          <url>https://maven.aliyun.com/repository/public</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>central</id>
+          <url>https://repo1.maven.org/maven2</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>jitpack</id>
+          <url>https://jitpack.io</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>multiple-repos</activeProfile>
+  </activeProfiles>
 </settings>
 EOF
 
-# 先拷贝 pom.xml,利用 Docker 层缓存加速依赖下载
+# 先拷贝 pom.xml,利用 Docker 层缓存加速依赖下载(go-offline 可能因部分插件缺失失败,允许返回非零)
 COPY pom.xml .
 RUN mvn -B dependency:go-offline -q || true
 
 # 拷贝源码并打包(跳过测试,测试在 CI 阶段跑)
 COPY src ./src
-RUN mvn -B clean package -DskipTests -q
+RUN mvn -B clean package -DskipTests -Dfile.encoding=UTF-8 -Dproject.build.sourceEncoding=UTF-8
 
 # ---------- 阶段 2:运行 ----------
 FROM eclipse-temurin:21-jre-jammy

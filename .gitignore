@@ -26,5 +26,8 @@ application-local.yml
 .env.local
 .env.*.local
 .env.prod
-.env.prod.*
+.env.prod.local
 deploy-logs/
+
+# 例外:.env.prod.example 是模板,需要提交
+!.env.prod.example
