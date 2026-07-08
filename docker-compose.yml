@@ -1,0 +1,161 @@
+# ============================================================
+# Ink Speaker docker-compose 编排(单机版,适配 4GB 服务器)
+# ============================================================
+# 组件:
+#   - postgres: pgvector 向量库(降低内存至 512MB)
+#   - redis:    L2 缓存 + ShedLock(关闭 AOF,降低 IO 压力)
+#   - ink-speaker: 业务应用
+#
+# 资源分配(4GB 总量):
+#   - postgres:     512MB
+#   - redis:        64MB
+#   - ink-speaker:  2048MB(-Xmx1600m + 元空间 + 堆外)
+#   - 系统 + Docker: ~500MB
+#   - 预留:         ~900MB(避免 OOM kill)
+# ============================================================
+
+services:
+
+  # ------------------------------------------------------------
+  # PostgreSQL 16 + pgvector 向量库
+  # ------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ink-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ink_speaker}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me-in-production}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:5432:5432"            # 仅本机访问,不对外暴露
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=100"             # 4GB 服务器不要设太大
+      - "-c"
+      - "shared_buffers=128MB"           # 1/4 内存,标准建议
+      - "-c"
+      - "effective_cache_size=512MB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "wal_buffers=4MB"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ink-net
+
+  # ------------------------------------------------------------
+  # Redis 7(L2 缓存 + ShedLock 后端)
+  # ------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ink-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"            # 仅本机访问
+    command:
+      - "redis-server"
+      - "--maxmemory"
+      - "64mb"                            # 4GB 服务器,Redis 给 64MB 够 L2 缓存用
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+      - "--save"
+      - ""                                # 关闭 RDB,降低 IO(缓存可重建)
+      - "--appendonly"
+      - "no"                              # 关闭 AOF
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ink-net
+
+  # ------------------------------------------------------------
+  # Ink Speaker 应用
+  # ------------------------------------------------------------
+  ink-speaker:
+    image: ink-speaker:latest
+    container_name: ink-speaker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-ink_speaker}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-change-me-in-production}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # 敏感字段(必填,生产从 .env 注入)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JASYPT_KEY: ${JASYPT_KEY:-ink-speaker-prod-key}
+      # JVM 参数:容器限制 2GB,-Xmx 设 1.6GB,留堆外/元空间
+      JAVA_OPTS: >-
+        -XX:InitialRAMPercentage=50
+        -XX:MaxRAMPercentage=70
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
+        -XX:MetaspaceSize=256m
+        -XX:MaxMetaspaceSize=384m
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/app/logs/heapdump.hprof
+        -XX:+ExitOnOutOfMemoryError
+        -Duser.timezone=Asia/Shanghai
+        -Dfile.encoding=UTF-8
+    ports:
+      - "9688:9688"                      # 业务端口对外
+      - "9689:9689"                      # Actuator 竡口(生产建议加防火墙白名单)
+    volumes:
+      - app_logs:/app/logs
+      - app_knowledge_base:/app/knowledge-base
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9688/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    networks:
+      - ink-net
+
+volumes:
+  postgres_data:
+    driver: local
+  app_logs:
+    driver: local
+  app_knowledge_base:
+    driver: local
+
+networks:
+  ink-net:
+    driver: bridge
