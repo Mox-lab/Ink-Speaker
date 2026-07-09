@@ -1,16 +1,13 @@
 package com.ink.speaker.config.web;
 
 import com.ink.speaker.common.NovelContext;
-import com.ink.speaker.common.BusinessException;
-import com.ink.speaker.common.ResultCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.lang.NonNull;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -21,6 +18,10 @@ import java.io.IOException;
 /**
  * 小说上下文过滤器。
  * <p>把"当前请求归属哪本小说 + 哪个用户"塞进 {@link NovelContext},供 Tool / Service 透传使用。</p>
+ *
+ * <p><b>过滤器顺序:</b>必须在 Spring Security 的 FilterChainProxy (order = -100) 之后运行,
+ * 这样 JwtAuthenticationFilter 已经将 Authentication 写入 SecurityContext,
+ * 本过滤器才能从中解析出 userId。使用 @Order(-90) 确保晚于 Spring Security。</p>
  *
  * <p>解析顺序(优先级从高到低):</p>
  * <ol>
@@ -43,7 +44,10 @@ import java.io.IOException;
  */
 @Slf4j
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+// 必须在 Spring Security 的 FilterChainProxy (order = -100) 之后运行,
+// 这样 JwtAuthenticationFilter 已将 Authentication 写入 SecurityContext,
+// 本过滤器才能从中解析出 userId。-90 = -100 + 10
+@Order(-90)
 public class NovelContextFilter extends OncePerRequestFilter {
 
     /** 请求头 key:小说 ID。 */
@@ -82,14 +86,10 @@ public class NovelContextFilter extends OncePerRequestFilter {
 
         // 2) 查询参数 novelId(兼容调试 / 旧前端)
         String param = request.getParameter(NOVEL_ID_PARAM);
-        Long fromParam = parseLong(param);
-        if (fromParam != null) {
-            return fromParam;
-        }
+        return parseLong(param);
 
         // 3) JWT claim 已被 JwtAuthenticationFilter 解到 SecurityContext,
         //    但当前业务约定不在 JWT 里绑定 novelId(切换小说走 X-Novel-Id 即可)。
-        return null;
     }
 
     /**

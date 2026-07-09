@@ -16,6 +16,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 鉴权业务实现。
@@ -38,7 +39,7 @@ public class AuthServiceImpl implements AuthService {
 
         // 收集角色(去掉 ROLE_ 前缀,JWT 内统一存原始名)
         List<String> roles = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
+                .map(GrantedAuthority::getAuthority).filter(Objects::nonNull)
                 .map(a -> a.startsWith("ROLE_") ? a : "ROLE_" + a)
                 .toList();
 
