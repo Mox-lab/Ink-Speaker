@@ -55,4 +55,9 @@
         ORDER BY chapter_no ASC
     </select>
 
+    <!-- 级联删除:删除指定小说的全部时间线节点 -->
+    <delete id="deleteByNovelId">
+        DELETE FROM novel_chapter_timeline WHERE novel_id = #{novelId}
+    </delete>
+
 </mapper>

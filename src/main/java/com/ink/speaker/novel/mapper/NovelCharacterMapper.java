@@ -42,4 +42,12 @@ public interface NovelCharacterMapper extends BaseMapper<NovelCharacter> {
      */
     List<NovelCharacter> searchByNovelIdAndNameContaining(@Param("novelId") Long novelId,
                                                           @Param("name") String name);
+
+    /**
+     * 删除指定小说的全部人物档案(级联删除使用)。
+     *
+     * @param novelId 小说 ID
+     * @return 受影响行数
+     */
+    int deleteByNovelId(@Param("novelId") Long novelId);
 }

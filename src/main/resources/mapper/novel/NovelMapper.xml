@@ -50,4 +50,37 @@
         ORDER BY updated_at DESC
     </select>
 
+    <!-- R5 用户隔离:删除小说(SQL 中带 ownerId 双重过滤,不属于该用户时返回 0) -->
+    <delete id="deleteByIdAndOwner">
+        DELETE FROM novel
+        WHERE id = #{id}
+          AND owner_id = #{ownerId}
+    </delete>
+
+    <!-- 概览统计:章节数 -->
+    <select id="countChapters" resultType="int">
+        SELECT COUNT(*) FROM novel_chapter_content WHERE novel_id = #{novelId}
+    </select>
+
+    <!-- 概览统计:大纲版本数 -->
+    <select id="countOutlines" resultType="int">
+        SELECT COUNT(*) FROM novel_outline WHERE novel_id = #{novelId}
+    </select>
+
+    <!-- 概览统计:人物档案数 -->
+    <select id="countCharacters" resultType="int">
+        SELECT COUNT(*) FROM novel_character WHERE novel_id = #{novelId}
+    </select>
+
+    <!-- 概览统计:世界观设定数 -->
+    <select id="countSettings" resultType="int">
+        SELECT COUNT(*) FROM novel_world_setting WHERE novel_id = #{novelId}
+    </select>
+
+    <!-- 概览统计:审查问题数(按状态) -->
+    <select id="countReviewIssuesByStatus" resultType="int">
+        SELECT COUNT(*) FROM novel_review_issue
+        WHERE novel_id = #{novelId} AND status = #{status}
+    </select>
+
 </mapper>

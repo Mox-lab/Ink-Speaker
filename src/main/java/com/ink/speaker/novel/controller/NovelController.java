@@ -1,16 +1,33 @@
 package com.ink.speaker.novel.controller;
 
 import com.ink.speaker.common.Result;
+import com.ink.speaker.novel.domain.dto.NovelCreateRequest;
+import com.ink.speaker.novel.domain.dto.NovelUpdateRequest;
+import com.ink.speaker.novel.domain.vo.NovelExportPayload;
 import com.ink.speaker.novel.service.NovelService;
+import com.ink.speaker.novel.domain.vo.NovelOverviewVo;
 import com.ink.speaker.novel.domain.vo.NovelVo;
+import com.ink.speaker.novel.domain.vo.SaveResultVo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -21,6 +38,16 @@ import java.util.List;
  * <ul>
  *   <li>{@code GET /api/data/novel} — 仅返回当前用户拥有的小说</li>
  *   <li>{@code GET /api/data/novel/shared} — 公共参考池(脱敏),任何登录用户可见</li>
+ * </ul>
+ *
+ * <p>第 6 阶段(以小说为主体):新增 CRUD 与概览接口,支撑前端"我的小说列表 →
+ * 进入某本小说 → 总览/续写/修改"信息架构。</p>
+ * <ul>
+ *   <li>{@code POST /api/data/novel} — 创建新小说</li>
+ *   <li>{@code GET /api/data/novel/{id}} — 取单本小说基础信息</li>
+ *   <li>{@code PUT /api/data/novel/{id}} — 更新小说基础信息</li>
+ *   <li>{@code DELETE /api/data/novel/{id}} — 删除小说(含级联子表)</li>
+ *   <li>{@code GET /api/data/novel/{id}/overview} — 取小说概览(基础信息 + 各子模块统计)</li>
  * </ul>
  */
 @Slf4j
@@ -44,5 +71,69 @@ public class NovelController {
     @GetMapping("/shared")
     public Result<List<NovelVo>> listShared() {
         return Result.success(novelService.listSharedForReference());
+    }
+
+    /** 创建新小说。 */
+    @Operation(summary = "创建新小说", description = "ownerId 强制取当前用户,不允许调用方传入")
+    @PostMapping
+    public Result<SaveResultVo> createNovel(@Valid @RequestBody NovelCreateRequest request) {
+        return Result.success(novelService.createNovel(request));
+    }
+
+    /** 取单本小说基础信息(校验所有权)。 */
+    @Operation(summary = "取小说详情", description = "不属于当前用户的小说返回 404")
+    @GetMapping("/{id}")
+    public Result<NovelVo> getNovel(@PathVariable Long id) {
+        return Result.success(novelService.getNovel(id));
+    }
+
+    /** 更新小说基础信息(校验所有权)。 */
+    @Operation(summary = "更新小说", description = "仅可改 title/author/description/sharedForReference")
+    @PutMapping("/{id}")
+    public Result<Void> updateNovel(@PathVariable Long id,
+                                    @Valid @RequestBody NovelUpdateRequest request) {
+        novelService.updateNovel(id, request);
+        return Result.success();
+    }
+
+    /** 删除小说(级联删除章节/大纲/人物/设定/时间线/审查问题)。 */
+    @Operation(summary = "删除小说", description = "整个级联在单事务中完成,任一子表失败则全部回滚")
+    @DeleteMapping("/{id}")
+    public Result<Void> deleteNovel(@PathVariable Long id) {
+        novelService.deleteNovel(id);
+        return Result.success();
+    }
+
+    /** 取小说概览(基础信息 + 各子模块统计 + 最近章节/大纲列表)。 */
+    @Operation(summary = "取小说概览", description = "进入小说后第一屏直接渲染,避免多次请求")
+    @GetMapping("/{id}/overview")
+    public Result<NovelOverviewVo> getNovelOverview(@PathVariable Long id) {
+        return Result.success(novelService.getNovelOverview(id));
+    }
+
+    /**
+     * 导出小说(BASE-10)。
+     * <p>聚合小说基础信息 + 大纲 + 人物 + 设定 + 全部章节,按 {@code format}
+     * 拼装为下载文件返回。仅 owner 可导出。</p>
+     * <p>格式:md / txt / json,默认 md。</p>
+     * <p>响应为二进制附件,Content-Disposition 同时设置 ASCII filename 兜底与
+     * RFC 5987 filename* UTF-8 编码,兼容各浏览器对中文文件名的处理。</p>
+     */
+    @Operation(summary = "导出小说",
+            description = "聚合小说+大纲+人物+设定+章节,支持 md / txt / json 三种格式")
+    @GetMapping("/{id}/export")
+    public ResponseEntity<byte[]> exportNovel(@PathVariable Long id,
+                                              @RequestParam(required = false) String format) {
+        NovelExportPayload payload = novelService.exportNovel(id, format);
+        String asciiName = payload.filename().replaceAll("[^\\x20-\\x7E]", "_");
+        String encodedName = URLEncoder.encode(payload.filename(), StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        String disposition = "attachment; filename=\"" + asciiName
+                + "\"; filename*=UTF-8''" + encodedName;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(payload.contentType()));
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, disposition);
+        headers.setContentLength(payload.content().length);
+        return new ResponseEntity<>(payload.content(), headers, org.springframework.http.HttpStatus.OK);
     }
 }

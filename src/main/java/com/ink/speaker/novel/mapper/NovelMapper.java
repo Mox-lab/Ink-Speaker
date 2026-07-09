@@ -53,4 +53,55 @@ public interface NovelMapper extends BaseMapper<Novel> {
      * @return 公开小说列表
      */
     List<Novel> listSharedForReference();
+
+    /**
+     * 按 id 删除小说(R5 用户隔离:SQL 中带 ownerId 双重过滤)。
+     * <p>级联子表删除由 Service 层在事务中显式调用各 Mapper 完成。</p>
+     *
+     * @param id      小说 ID
+     * @param ownerId 当前用户 ID
+     * @return 受影响行数(0 表示不存在或不属于该用户)
+     */
+    int deleteByIdAndOwner(@Param("id") Long id, @Param("ownerId") Long ownerId);
+
+    /**
+     * 统计某本小说的章节数。
+     *
+     * @param novelId 小说 ID
+     * @return 章节总数
+     */
+    int countChapters(@Param("novelId") Long novelId);
+
+    /**
+     * 统计某本小说的大纲版本数。
+     *
+     * @param novelId 小说 ID
+     * @return 大纲版本总数
+     */
+    int countOutlines(@Param("novelId") Long novelId);
+
+    /**
+     * 统计某本小说的人物档案数。
+     *
+     * @param novelId 小说 ID
+     * @return 人物档案数
+     */
+    int countCharacters(@Param("novelId") Long novelId);
+
+    /**
+     * 统计某本小说的世界观设定数。
+     *
+     * @param novelId 小说 ID
+     * @return 设定数
+     */
+    int countSettings(@Param("novelId") Long novelId);
+
+    /**
+     * 统计某本小说的未解决审查问题数。
+     *
+     * @param novelId 小说 ID
+     * @param status  审查问题状态(open/resolved/ignored)
+     * @return 审查问题数
+     */
+    int countReviewIssuesByStatus(@Param("novelId") Long novelId, @Param("status") String status);
 }

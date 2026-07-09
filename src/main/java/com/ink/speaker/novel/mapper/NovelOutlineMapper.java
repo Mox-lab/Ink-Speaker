@@ -56,4 +56,12 @@ public interface NovelOutlineMapper extends BaseMapper<NovelOutline> {
      * @return 受影响行数
      */
     int updateActive(@Param("id") Long id, @Param("active") boolean active);
+
+    /**
+     * 删除指定小说的全部大纲版本(级联删除使用)。
+     *
+     * @param novelId 小说 ID
+     * @return 受影响行数
+     */
+    int deleteByNovelId(@Param("novelId") Long novelId);
 }

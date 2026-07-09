@@ -54,4 +54,12 @@ public interface NovelChapterTimelineMapper extends BaseMapper<NovelChapterTimel
      */
     List<NovelChapterTimeline> findRecentChapters(@Param("novelId") Long novelId,
                                                   @Param("limit") int limit);
+
+    /**
+     * 删除指定小说的全部时间线节点(级联删除使用)。
+     *
+     * @param novelId 小说 ID
+     * @return 受影响行数
+     */
+    int deleteByNovelId(@Param("novelId") Long novelId);
 }

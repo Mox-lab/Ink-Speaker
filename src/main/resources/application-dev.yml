@@ -13,7 +13,7 @@
 langchain4j:
   open-ai:
     chat-model:
-      api-key: ${OPENAI_API_KEY:dev-only-key-please-set-OPENAI_API_KEY-env}
+      api-key: ${OPENAI_API_KEY:sk-9f0371e4d97e4d0fbf8d6f6182af25c8}
       log-requests: true
       log-responses: true
   ollama:

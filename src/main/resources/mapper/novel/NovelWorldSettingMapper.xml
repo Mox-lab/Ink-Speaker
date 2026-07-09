@@ -48,4 +48,9 @@
         ORDER BY id ASC
     </select>
 
+    <!-- 级联删除:删除指定小说的全部世界观设定 -->
+    <delete id="deleteByNovelId">
+        DELETE FROM novel_world_setting WHERE novel_id = #{novelId}
+    </delete>
+
 </mapper>

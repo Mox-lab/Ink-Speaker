@@ -48,4 +48,9 @@
         ORDER BY chapter_no ASC, id ASC
     </select>
 
+    <!-- 级联删除:删除指定小说的全部审查问题 -->
+    <delete id="deleteByNovelId">
+        DELETE FROM novel_review_issue WHERE novel_id = #{novelId}
+    </delete>
+
 </mapper>

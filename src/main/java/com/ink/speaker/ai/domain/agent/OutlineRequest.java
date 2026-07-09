@@ -20,5 +20,5 @@ public record OutlineRequest(
         String setting,
         @NotNull @Min(1) Integer chapters,
         String lastOutline,
-        @NotNull @Min(1) Integer startChapter) {
+        @Min(1) Integer startChapter) {
 }

@@ -40,4 +40,12 @@ public interface NovelChapterContentMapper extends BaseMapper<NovelChapterConten
      * @return 最新章节(可能为空)
      */
     Optional<NovelChapterContent> findFirstByNovelIdOrderByChapterNoDesc(@Param("novelId") Long novelId);
+
+    /**
+     * 删除指定小说的全部章节(级联删除使用)。
+     *
+     * @param novelId 小说 ID
+     * @return 受影响行数
+     */
+    int deleteByNovelId(@Param("novelId") Long novelId);
 }

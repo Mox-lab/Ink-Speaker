@@ -45,4 +45,9 @@
         LIMIT 1
     </select>
 
+    <!-- 级联删除:删除指定小说的全部章节 -->
+    <delete id="deleteByNovelId">
+        DELETE FROM novel_chapter_content WHERE novel_id = #{novelId}
+    </delete>
+
 </mapper>
