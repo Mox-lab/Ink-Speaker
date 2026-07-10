@@ -30,10 +30,6 @@ CREATE TABLE IF NOT EXISTS novel (
 CREATE INDEX IF NOT EXISTS idx_novel_owner ON novel(owner_id);
 CREATE INDEX IF NOT EXISTS idx_novel_shared ON novel(shared_for_reference) WHERE shared_for_reference = true;
 
--- 插入默认小说(novel_id=1),如果尚未存在
-INSERT INTO novel (id, title, author, description)
-VALUES (1, '云陵纪事', 'AI 共创', '演示用小说:江湖与朝堂交织的悬疑武侠故事')
-ON CONFLICT (id) DO NOTHING;
 
 
 -- ============================================================

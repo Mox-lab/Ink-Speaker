@@ -24,7 +24,7 @@ import lombok.Setter;
 @Table(name = "novel_outline")
 public class NovelOutline extends BaseEntity {
 
-    @Column(name = "novel_id", nullable = false)
+    @Column(nullable = false)
     private Long novelId;
 
     @Column(length = 200)
@@ -44,7 +44,7 @@ public class NovelOutline extends BaseEntity {
     private Integer version = 1;
 
     /** 当前激活版本(用于「续生」时取上一版本尾段)。数据库列为 NOT NULL,使用基本类型。 */
-    @Column(name = "is_active", nullable = false)
+    @Column(nullable = false)
     @Builder.Default
-    private boolean active = false;
+    private boolean isActive = false;
 }

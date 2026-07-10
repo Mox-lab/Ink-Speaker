@@ -76,7 +76,7 @@ public class OutlineServiceImpl implements OutlineService {
                 .chapters(chapters)
                 .content(content)
                 .version(newVer)
-                .active(true)
+                .isActive(true)
                 .build();
         outlineDao.insert(outline);
         log.info("[saveOutline] novelId={}, version={}, id={}", novelId, newVer, outline.getId());
