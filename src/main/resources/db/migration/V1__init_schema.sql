@@ -254,7 +254,7 @@ INSERT INTO sys_roles (name) VALUES ('ROLE_USER') ON CONFLICT (name) DO NOTHING;
 -- 默认示例用户(BCrypt 10 rounds 哈希)
 --   admin123 -> $2a$10$Ncb0EaO4g8MTzrBkYoUX.e26FzzL2KGR2g1DPlqsxRAK8MdGdrJc2
 INSERT INTO sys_users (username, nickname, password, enabled)
-VALUES ('admin', 'Admin', '$2a$10$Ncb0EaO4g8MTzrBkYoUX.e26FzzL2KGR2g1DPlqsxRAK8MdGdrJc2', TRUE)
+VALUES ('admin', '你拉不拉屎', '$2a$10$Ncb0EaO4g8MTzrBkYoUX.e26FzzL2KGR2g1DPlqsxRAK8MdGdrJc2', TRUE)
 ON CONFLICT (username) DO NOTHING;
 
 -- 绑定默认角色

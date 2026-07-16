@@ -28,7 +28,7 @@ REM ------------------------------------------------------------
 REM 2. 应用主 jar 定位
 REM ------------------------------------------------------------
 set APP_DIR=%~dp0..
-set JAR_FILE=%APP_DIR%\target\moyu-1.0.0-SNAPSHOT.jar
+set JAR_FILE=%APP_DIR%\target\ink-realm-1.0.0-SNAPSHOT.jar
 
 if not exist "%JAR_FILE%" (
     echo [ERROR] jar 不存在: %JAR_FILE% 1>&2
