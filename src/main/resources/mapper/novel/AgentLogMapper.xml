@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ink.realm.novel.mapper.AgentLogMapper">
+
+    <!-- 事件类型聚合统计(GROUP BY + COUNT DISTINCT,保留 XML) -->
+    <select id="countByEventTypeAndDateRange" resultType="java.util.HashMap">
+        SELECT event_type      AS "eventType",
+               COUNT(1)        AS "total",
+               COUNT(DISTINCT user_id) AS "uniqUsers"
+          FROM agent_log
+         WHERE ct_time &gt;= #{startTime}
+           AND ct_time &lt;  #{endTime}
+         GROUP BY event_type
+         ORDER BY MIN(ct_time)
+    </select>
+
+</mapper>

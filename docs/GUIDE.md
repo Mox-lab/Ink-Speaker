@@ -1,4 +1,4 @@
-# Agent 开发详细指南(Ink Speaker 版)
+# Agent 开发详细指南(Ink Realm 版)
 
 > 本文面向**第一次接触 Agent 开发的 Java 工程师**。
 > 读完后你会明白:Agent 到底是什么、它和普通后端服务有什么区别、怎么用 Java 写一个 AI 小说生成 Agent。
@@ -188,7 +188,7 @@ WritingAssistantAgent agent = AiServices.builder(WritingAssistantAgent.class)
 {
   "model": "deepseek-chat",
   "messages": [
-    {"role": "system", "content": "你是墨语,一名资深网文写作助手..."},
+    {"role": "system", "content": "你是墨域,一名资深网文写作助手..."},
     {"role": "user", "content": "主角叫林晚,24 岁"},
     {"role": "assistant", "content": "好的,记下了..."},
     {"role": "user", "content": "写林晚初遇苏砚的章节"}
@@ -214,7 +214,7 @@ WritingAssistantAgent agent = AiServices.builder(WritingAssistantAgent.class)
 ## 4. 项目结构详解
 
 ```
-ink-speaker/
+ink-realm/
 ├── pom.xml                              # Maven 依赖
 ├── README.md                            # 入门文档
 ├── docs/
@@ -335,7 +335,7 @@ public String queryCharacter(@P("人物姓名,例如 林晚、苏砚、赵九") 
 public interface WritingAssistantAgent {
 
     @SystemMessage("""
-            你是"墨语",一名资深网文写作助手。你的职责:
+            你是"墨域",一名资深网文写作助手。你的职责:
             1. 与作者协作完成小说创作:写章节、改稿子、补设定;
             2. 涉及具体人物、地点、势力、剧情节点时,**必须**先调用对应工具查询设定;
             ...
@@ -457,7 +457,7 @@ langchain4j:
 logging:
   level:
     dev.langchain4j: DEBUG
-    com.ink.speaker: DEBUG
+    ink.realm: DEBUG
 ```
 
 启动后会看到完整的 Prompt 和 LLM 响应,排查问题非常方便。

@@ -18,7 +18,7 @@
 | 65-74 | admin/admin123、user/user123 | 弱密码、硬编码、无法动态管理 |
 | 84 | `BCryptPasswordEncoder` Bean | 已注入但 `withDefaultPasswordEncoder()` 未使用,存在矛盾 |
 | 全文 | 未配置 `SessionCreationPolicy.STATELESS` | REST API 应无状态 |
-| 全文 | 未引用 `ink-speaker.jwt.*` 配置项 | `application.yml` 中 `ink-speaker.jwt.secret/access-token-ttl/refresh-token-ttl` 已定义但悬空 |
+| 全文 | 未引用 `ink.jwt.*` 配置项 | `application.yml` 中 `ink.jwt.secret/access-token-ttl/refresh-token-ttl` 已定义但悬空 |
 | 全文 | 未放行 `/actuator/health`、`/swagger-ui/**`、`/v3/api-docs/**` | K8s 探针和 Swagger UI 无法直接访问 |
 | 全文 | 未放行登录端点 `/api/auth/login` | 应用没有登录端点,无法签发 JWT |
 
@@ -65,12 +65,12 @@ public class JwtUtil {
     private final long refreshTtlMs;
     private final String issuer;
 
-    // @Value 注入 ink-speaker.jwt.* 配置
+    // @Value 注入 ink.jwt.* 配置
     public JwtUtil(
-        @Value("${ink-speaker.jwt.secret}") String secret,
-        @Value("${ink-speaker.jwt.access-token-ttl}") Duration accessTtl,
-        @Value("${ink-speaker.jwt.refresh-token-ttl}") Duration refreshTtl,
-        @Value("${ink-speaker.jwt.issuer}") String issuer
+        @Value("${ink.jwt.secret}") String secret,
+        @Value("${ink.jwt.access-token-ttl}") Duration accessTtl,
+        @Value("${ink.jwt.refresh-token-ttl}") Duration refreshTtl,
+        @Value("${ink.jwt.issuer}") String issuer
     ) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.accessTtlMs = accessTtl.toMillis();
@@ -233,10 +233,10 @@ public class SecurityConfig {
 
 | `application.yml` 配置项 | 在 Java 中的消费点 |
 |--------------------------|-------------------|
-| `ink-speaker.jwt.secret` | `JwtUtil` 构造函数 `@Value` 注入,生成 HMAC-SHA256 密钥 |
-| `ink-speaker.jwt.access-token-ttl` (PT2H) | `JwtUtil` 控制 access token 过期(2 小时 = 7200 秒) |
-| `ink-speaker.jwt.refresh-token-ttl` (P7D) | `JwtUtil` 控制 refresh token 过期(7 天) |
-| `ink-speaker.jwt.issuer` (ink-speaker) | `JwtUtil` 写入 `claims.setIssuer()` |
+| `ink.jwt.secret` | `JwtUtil` 构造函数 `@Value` 注入,生成 HMAC-SHA256 密钥 |
+| `ink.jwt.access-token-ttl` (PT2H) | `JwtUtil` 控制 access token 过期(2 小时 = 7200 秒) |
+| `ink.jwt.refresh-token-ttl` (P7D) | `JwtUtil` 控制 refresh token 过期(7 天) |
+| `ink.jwt.issuer` (ink-realm) | `JwtUtil` 写入 `claims.setIssuer()` |
 
 **注意**:HS256 要求 secret 字节长度 ≥ 32。当前 `application.yml` 中的默认值
 `c2VjcmV0LWtleS1mb3Itbm92ZWwtZm9yZ2UtZG8tbm90LXVzZS1pbi1wcm9kdWN0aW9u`
@@ -246,7 +246,7 @@ public class SecurityConfig {
 
 ## 6. 实施步骤(推荐顺序)
 
-1. **新建包** `com.ink.speaker.config.security`
+1. **新建包** `ink.realm.config.security`
 2. **写 JwtUtil**:签发 / 解析 / 校验工具类,单元测试覆盖率 ≥ 90%
 3. **写 JwtAuthenticationFilter**:继承 `OncePerRequestFilter`,先不改 SecurityConfig
 4. **写 AuthController**:`/api/auth/login` + `/api/auth/refresh`

@@ -1,0 +1,2 @@
+# 注册 Spring Boot 启动失败分析器(数据库不存在时输出友好中文提示)
+org.springframework.boot.diagnostics.FailureAnalyzer=ink.realm.config.DataSourceFailureAnalyzer

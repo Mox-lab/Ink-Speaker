@@ -1,0 +1,127 @@
+package ink.realm.config.web;
+
+import ink.realm.common.context.NovelContext;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
+import ink.realm.config.async.AsyncConfig;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+
+/**
+ * 小说上下文过滤器。
+ * <p>把"当前请求归属哪本小说 + 哪个用户"塞进 {@link NovelContext},供 Tool / Service 透传使用。</p>
+ *
+ * <p><b>过滤器顺序:</b>必须在 Spring Security 的 FilterChainProxy (order = -100) 之后运行,
+ * 这样 JwtAuthenticationFilter 已经将 Authentication 写入 SecurityContext,
+ * 本过滤器才能从中解析出 userId。使用 @Order(-90) 确保晚于 Spring Security。</p>
+ *
+ * <p>解析顺序(优先级从高到低):</p>
+ * <ol>
+ *   <li>请求头 {@code X-Novel-Id}(前端切换小说时显式传)</li>
+ *   <li>查询参数 {@code novelId}(兼容老旧前端或调试)</li>
+ *   <li>JWT claim {@code novelId}(未来:登录时绑定默认小说,刷新时可切换)</li>
+ * </ol>
+ *
+ * <p>以上来源均无时,context 为空,业务侧需自行处理(回退默认值或抛 400)。</p>
+ *
+ * <p><b>userId 解析:</b>从 SecurityContext 的 Authentication.principal 拿,
+ * JwtAuthenticationFilter 已将 userId(Long) 写入 principal,
+ * 这里直接取 Long 即可。</p>
+ *
+ * <p><b>R5 用户隔离:</b>novelId 与 userId 同时在 NovelContext 中,
+ * Service 层在读写小说数据时校验 novel.ownerId == userId,不匹配则抛 403。</p>
+ *
+ * <p><b>注意:</b>异步线程({@code @Async} / 线程池)不会自动继承 ThreadLocal,
+ * 已通过 {@link AsyncConfig#novelContextTaskDecorator} 透传。</p>
+ */
+@Slf4j
+@Component
+// 必须在 Spring Security 的 FilterChainProxy (order = -100) 之后运行,
+// 这样 JwtAuthenticationFilter 已将 Authentication 写入 SecurityContext,
+// 本过滤器才能从中解析出 userId。-90 = -100 + 10
+@Order(-90)
+public class NovelContextFilter extends OncePerRequestFilter {
+
+    /** 请求头 key:小说 ID。 */
+    public static final String NOVEL_ID_HEADER = "X-Novel-Id";
+
+    /** 查询参数 key:兼容旧调用方式。 */
+    public static final String NOVEL_ID_PARAM = "novelId";
+
+    @Override
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain chain) throws ServletException, IOException {
+        try {
+            Long novelId = resolveNovelId(request);
+            if (novelId != null) {
+                NovelContext.setNovelId(novelId);
+            }
+            Long userId = resolveUserId();
+            if (userId != null) {
+                NovelContext.setUserId(userId);
+            }
+            chain.doFilter(request, response);
+        } finally {
+            // 必须清理:Tomcat 线程池会复用线程,否则下次请求会读到上一次的 novelId/userId
+            NovelContext.clear();
+        }
+    }
+
+    private Long resolveNovelId(HttpServletRequest request) {
+        // 1) 请求头 X-Novel-Id
+        String header = request.getHeader(NOVEL_ID_HEADER);
+        Long fromHeader = parseLong(header);
+        if (fromHeader != null) {
+            return fromHeader;
+        }
+
+        // 2) 查询参数 novelId(兼容调试 / 旧前端)
+        String param = request.getParameter(NOVEL_ID_PARAM);
+        return parseLong(param);
+
+        // 3) JWT claim 已被 JwtAuthenticationFilter 解到 SecurityContext,
+        //    但当前业务约定不在 JWT 里绑定 novelId(切换小说走 X-Novel-Id 即可)。
+    }
+
+    /**
+     * 从 SecurityContext 拿当前鉴权用户的 userId。
+     *
+     * <p>JwtAuthenticationFilter 解析 JWT 后,把 userId(Long) 写入 Authentication.principal。
+     * 本过滤器直接取 Long 写入 NovelContext,供 Service 层行级隔离使用。</p>
+     */
+    private Long resolveUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getPrincipal() == null) {
+            return null;
+        }
+        Object principal = auth.getPrincipal();
+        if (principal instanceof Long userId) {
+            return userId;
+        }
+        log.debug("[NovelContext] principal 非 Long userId,类型: {}",
+                principal.getClass().getName());
+        return null;
+    }
+
+    private Long parseLong(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            log.debug("[NovelContext] 无法解析 novelId: {}", raw);
+            return null;
+        }
+    }
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ink.realm.novel.mapper.NovelChapterHistoryMapper">
+
+    <!--
+        删除某章节超出 keep 数量的旧历史快照。
+        仅保留最近 keep 版(按 id DESC),PostgreSQL 子查询中可直接用 LIMIT。
+    -->
+    <delete id="deleteOldSnapshotsByChapterId">
+        DELETE FROM novel_chapter_history
+         WHERE chapter_id = #{chapterId}
+           AND id NOT IN (
+                SELECT id FROM novel_chapter_history
+                 WHERE chapter_id = #{chapterId}
+                 ORDER BY id DESC
+                 LIMIT #{keep}
+           )
+    </delete>
+
+</mapper>

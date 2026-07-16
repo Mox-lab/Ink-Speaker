@@ -10,12 +10,12 @@
         <version>4.1.0</version>
     </parent>
 
-    <groupId>com.ink</groupId>
-    <artifactId>ink-speaker</artifactId>
+    <groupId>ink.realm</groupId>
+    <artifactId>ink-realm</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 
-    <name>ink-speaker</name>
-    <description>Ink Speaker - 基于 LangChain4j 的 AI 小说生成 Agent</description>
+    <name>墨域</name>
+    <description>墨域 - 基于 LangChain4j 的 AI 小说生成 Agent</description>
 
     <properties>
         <java.version>21</java.version>
@@ -97,10 +97,7 @@
         <!-- ================================================================ -->
         <!-- 2. 数据访问层(JPA + MyBatis-Plus + PostgreSQL + Flyway)         -->
         <!-- ================================================================ -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
+
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot4-starter</artifactId>

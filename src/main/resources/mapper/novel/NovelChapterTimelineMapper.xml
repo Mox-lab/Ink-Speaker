@@ -1,61 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.ink.speaker.novel.mapper.NovelChapterTimelineMapper">
+<mapper namespace="ink.realm.novel.mapper.NovelChapterTimelineMapper">
 
-    <resultMap id="NovelChapterTimelineMap" type="com.ink.speaker.novel.domain.entity.NovelChapterTimeline">
-        <id column="id" property="id"/>
-        <result column="novel_id" property="novelId"/>
-        <result column="chapter_no" property="chapterNo"/>
-        <result column="title" property="title"/>
-        <result column="summary" property="summary"/>
-        <result column="created_at" property="createdAt"/>
-        <result column="updated_at" property="updatedAt"/>
-    </resultMap>
-
-    <sql id="Base_Column_List">
-        id, novel_id, chapter_no, title, summary, created_at, updated_at
-    </sql>
-
-    <select id="findByNovelIdAndChapterNo" resultMap="NovelChapterTimelineMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM novel_chapter_timeline
-        WHERE novel_id = #{novelId}
-          AND chapter_no = #{chapterNo}
-        LIMIT 1
-    </select>
-
-    <select id="listByNovelIdOrderByChapterNoAsc" resultMap="NovelChapterTimelineMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM novel_chapter_timeline
-        WHERE novel_id = #{novelId}
-        ORDER BY chapter_no ASC
-    </select>
-
-    <select id="searchByTitleOrSummary" resultMap="NovelChapterTimelineMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM novel_chapter_timeline
-        WHERE novel_id = #{novelId}
-          AND (
-            title ILIKE CONCAT('%', #{titleKeyword}, '%')
-            OR summary ILIKE CONCAT('%', #{summaryKeyword}, '%')
-          )
-        ORDER BY chapter_no ASC
-    </select>
-
-    <select id="findRecentChapters" resultMap="NovelChapterTimelineMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM (
-            SELECT <include refid="Base_Column_List"/>
-            FROM novel_chapter_timeline
-            WHERE novel_id = #{novelId}
-            ORDER BY chapter_no DESC
-            LIMIT #{limit}
-        ) t
-        ORDER BY chapter_no ASC
-    </select>
-
-    <!-- 级联删除:删除指定小说的全部时间线节点 -->
+    <!-- 级联删除:物理删除指定小说的全部时间线节点(保留 XML) -->
     <delete id="deleteByNovelId">
         DELETE FROM novel_chapter_timeline WHERE novel_id = #{novelId}
     </delete>

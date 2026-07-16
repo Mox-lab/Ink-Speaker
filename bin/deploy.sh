@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Ink Speaker 一键部署脚本(纯镜像拉取模式)
+# Ink Realm 一键部署脚本(纯镜像拉取模式)
 # ============================================================
 # 特点:
 #   - 不需要源代码(服务器无 src/ / pom.xml / package.json)
@@ -22,8 +22,8 @@ set -euo pipefail
 # ------------------------------------------------------------
 # 配置区
 # ------------------------------------------------------------
-APP_NAME="ink-speaker"
-WEB_NAME="ink-speaker-web"
+APP_NAME="ink-realm"
+WEB_NAME="ink-realm-web"
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${APP_DIR}/.env.prod"
 LOG_DIR="${APP_DIR}/deploy-logs"
@@ -31,7 +31,8 @@ LOG_DIR="${APP_DIR}/deploy-logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
 
-HEALTH_URL="http://localhost:9688/actuator/health"
+HEALTH_PORT="${MANAGEMENT_SERVER_PORT:-9689}"
+HEALTH_URL="http://localhost:${HEALTH_PORT}/actuator/health"
 HEALTH_TIMEOUT=180
 
 # ------------------------------------------------------------
@@ -165,7 +166,7 @@ restart_services() {
         docker compose --env-file "${ENV_FILE}" up -d --no-deps --force-recreate nginx
     fi
 
-    info "等待后端健康检查(最长 ${HEALTH_TIMEOUT}s)..."
+    info "等待后端健康检查(${HEALTH_URL},最长 ${HEALTH_TIMEOUT}s)..."
     local elapsed=0
     while [[ ${elapsed} -lt ${HEALTH_TIMEOUT} ]]; do
         local status
@@ -181,7 +182,7 @@ restart_services() {
 
     if [[ "${elapsed}" -ge "${HEALTH_TIMEOUT}" ]]; then
         fatal "后端健康检查超时,启动失败
-        排查命令:docker compose logs --tail=200 ink-speaker"
+        排查命令:docker compose logs --tail=200 ink-realm"
     fi
 
     if [[ "${DEPLOY_FRONTEND:-yes}" == "yes" ]]; then

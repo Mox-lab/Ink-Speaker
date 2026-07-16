@@ -18,7 +18,7 @@ graph TB
         NGINX[Nginx<br/>TLS / 域名 / 静态资源]
     end
 
-    subgraph App[Ink Speaker 单体应用 :9688]
+    subgraph App[Ink Realm 单体应用 :9688]
         direction TB
 
         subgraph Web_Layer[1. Web 层]
@@ -131,7 +131,7 @@ graph TB
 | 业务端口 | `:9688` | REST API + SSE 流式输出 |
 | 管理端口 | `:9689` | Actuator `/actuator/**`(独立端口,便于防火墙隔离) |
 | Swagger UI | `:9688/swagger-ui.html` | API 文档 |
-| PostgreSQL | `localhost:5432/ink_speaker` | 业务表 + pgvector 向量库 |
+| PostgreSQL | `localhost:5432/ink_realm` | 业务表 + pgvector 向量库 |
 | Redis | `localhost:6379` | L2 缓存 + ShedLock 锁后端 |
 | OpenAI 兼容 | `https://aihub.bielcrystal.com/v1` | 主 LLM Provider |
 | Ollama | `http://localhost:11434` | 本地备用 LLM |
@@ -290,7 +290,7 @@ LLM 继续调用 queryCharacter("苏砚")、queryWorldSetting("云陵城")...
 ### 5.12 API 文档(SpringDoc OpenAPI 3)
 
 - 路径:`/swagger-ui.html`
-- 自动扫描 `com.ink.speaker.controller` 包
+- 自动扫描 `ink.realm.controller` 包
 - 配合 JWT 调试:在 Swagger 页面右上角 Authorize 填 token
 
 ### 5.13 工具与映射(Lombok + MapStruct + Hutool)
@@ -350,7 +350,7 @@ LangChain4j 1.17.x 的 `langchain4j-http-client-spring-restclient` 引用了 `or
 | 换向量库 | `EmbeddingConfig.java` + 改 pom 依赖 |
 | 持久化 Memory | 自定义 `ChatMemoryStore` 实现(用 Redis) |
 | 改 Agent 人设 | 各 Agent 接口的 `@SystemMessage` |
-| 调整 RAG 检索数量 | `application.yml` 的 `ink-speaker.rag-top-k` |
+| 调整 RAG 检索数量 | `application.yml` 的 `ink.rag-top-k` |
 | 新增"校对 Agent" | 新建接口 + 在 AgentConfig 加 Bean + Controller 加接口 |
 | 加定时任务 | `@Scheduled` + `@SchedulerLock` 注解 |
 | 调整熔断阈值 | `application.yml` 的 `resilience4j.circuitbreaker.instances.llm-call` |
@@ -385,7 +385,7 @@ Agent 项目:
 
 | 阶段 | 加什么 | 触发条件 |
 |------|--------|----------|
-| 当前 | 单体 ink-speaker:9688 | 用户量 < 100,日生成量 < 1k 章节 |
+| 当前 | 单体 ink-realm:9688 | 用户量 < 100,日生成量 < 1k 章节 |
 | 阶段 1 | + Nginx 反代 + Prometheus/Grafana | 上生产 |
 | 阶段 2 | + Spring Cloud Gateway + Nacos | 拆出独立服务(用户服务/作品服务/生成服务) |
 | 阶段 3 | + RabbitMQ/Kafka + Micrometer Tracing | 异步生成量大、需要服务间解耦 |

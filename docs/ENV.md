@@ -14,7 +14,7 @@
 | `REDIS_PORT` | ❌ | `6379` | Redis 端口 | 保持默认 |
 | `REDIS_PASSWORD` | ❌ | (空) | Redis 密码 | 强烈建议设置 |
 | `JWT_SECRET` | ✅ | 内置 dev key | JWT HMAC-SHA256 签名密钥 | 32+ 字节强随机 |
-| `JASYPT_KEY` | ✅ | `ink-speaker-dev-key` | 解密 `ENC(...)` 配置项 | K8s Secret 注入 |
+| `JASYPT_KEY` | ✅ | `ink-realm-dev-key` | 解密 `ENC(...)` 配置项 | K8s Secret 注入 |
 | `SPRING_PROFILES_ACTIVE` | ❌ | `dev` | Spring Profile | 生产用 `prod` |
 | `SERVER_PORT` | ❌ | `9688` | 业务端口 | 反代后保持内网 |
 | `MANAGEMENT_SERVER_PORT` | ❌ | `9689` | Actuator 端口 | 仅运维网段可见 |
@@ -37,10 +37,10 @@
 
 ### 2.2 `DB_PASSWORD`
 
-- **用途**:PostgreSQL `ink_speaker` 数据库密码
+- **用途**:PostgreSQL `ink_realm` 数据库密码
 - **配置点**:`spring.datasource.password`
 - **生成**:`openssl rand -base64 24`
-- **生产**:数据库专用户 + 最小权限(仅 `ink_speaker` 库的 DML/DDL)
+- **生产**:数据库专用户 + 最小权限(仅 `ink_realm` 库的 DML/DDL)
 
 ### 2.3 `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`
 
@@ -121,7 +121,7 @@ mvn spring-boot:run
 ### 3.3 Docker
 
 ```bash
-docker run --env-file .env ink-speaker:latest
+docker run --env-file .env ink-realm:latest
 ```
 
 ### 3.4 Kubernetes
@@ -131,7 +131,7 @@ docker run --env-file .env ink-speaker:latest
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ink-speaker-secrets
+  name: ink-realm-secrets
 type: Opaque
 stringData:
   OPENAI_API_KEY: sk-xxx
@@ -145,7 +145,7 @@ spec:
     - name: app
       envFrom:
         - secretRef:
-            name: ink-speaker-secrets
+            name: ink-realm-secrets
 ```
 
 ---
@@ -155,7 +155,7 @@ spec:
 - [ ] `.env` 已在 `.gitignore` 中
 - [ ] 日志配置不输出 `OPENAI_API_KEY` / `DB_PASSWORD` / `JWT_SECRET` / `JASYPT_KEY`
 - [ ] `application.yml` 中无明文密钥
-- [ ] 数据库用户仅能访问 `ink_speaker` 库
+- [ ] 数据库用户仅能访问 `ink_realm` 库
 - [ ] Redis 已设置密码
 - [ ] K8s Secret 已加密(etcd 加密)
 - [ ] CI/CD 流水线日志中无密钥泄露

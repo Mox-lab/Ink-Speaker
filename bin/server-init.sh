@@ -22,7 +22,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 echo "================================================"
-echo "  Ink Speaker 服务器初始化(Debian 13.2)"
+echo "  Ink Realm 服务器初始化(Debian 13.2)"
 echo "================================================"
 
 # ------------------------------------------------------------
@@ -110,7 +110,7 @@ fi
 # 5. 系统参数调优
 # ------------------------------------------------------------
 echo "[5/8] 系统参数调优..."
-cat > /etc/sysctl.d/99-ink-speaker.conf <<'EOF'
+cat > /etc/sysctl.d/99-ink.conf <<'EOF'
 # 文件句柄上限(应用 + postgres 都需要)
 fs.file-max = 655350
 
@@ -124,10 +124,10 @@ net.ipv4.tcp_keepalive_time = 600
 # 内存分配策略(避免 OOM 时直接 kill 进程)
 vm.overcommit_memory = 1
 EOF
-sysctl -p /etc/sysctl.d/99-ink-speaker.conf
+sysctl -p /etc/sysctl.d/99-ink.conf
 
 # 提升 docker 用户的文件句柄限制
-cat > /etc/security/limits.d/99-ink-speaker.conf <<'EOF'
+cat > /etc/security/limits.d/99-ink.conf <<'EOF'
 *       soft    nofile  655350
 *       hard    nofile  655350
 root    soft    nofile  655350
@@ -138,7 +138,7 @@ EOF
 # 6. 创建应用目录
 # ------------------------------------------------------------
 echo "[6/8] 创建应用目录..."
-APP_DIR="/opt/ink-speaker"
+APP_DIR="/opt/ink-realm"
 mkdir -p "${APP_DIR}"
 echo "  应用目录:${APP_DIR}"
 
@@ -148,7 +148,7 @@ echo "  应用目录:${APP_DIR}"
 echo "[7/8] 配置防火墙..."
 if command -v ufw >/dev/null 2>&1; then
     ufw allow 22/tcp       comment 'SSH' || true
-    ufw allow 9688/tcp     comment 'Ink Speaker 业务端口' || true
+    ufw allow 9688/tcp     comment 'Ink Realm 业务端口' || true
     # 9689 Actuator 端口不对外,仅本机访问
     ufw --force enable || true
     echo "  ufw 已启用,仅放行 22/9688"
@@ -178,7 +178,7 @@ echo "  初始化完成!"
 echo "================================================"
 echo ""
 echo "下一步:"
-echo "  1. cd /opt/ink-speaker"
+echo "  1. cd /opt/ink-realm"
 echo "  2. git clone <你的仓库地址> ."
 echo "  3. cp .env.prod.example .env.prod && vim .env.prod"
 echo "  4. bash deploy.sh"

@@ -1,5 +1,5 @@
 # ============================================================
-# Ink Speaker 配置文件 - AI 小说生成 Agent
+# Ink Realm 配置文件 - AI 小说生成 Agent
 # ============================================================
 # 说明:
 #   1. 本文件为公共配置,所有环境共享。
@@ -26,7 +26,7 @@ server:
 # ============================================================
 spring:
   application:
-    name: ink-speaker
+    name: ink-realm
 
   # 关闭启动信息打印(默认会输出 Java 版本/PID/用户名/工作目录/类路径,含敏感信息)
   main:
@@ -40,7 +40,8 @@ spring:
   # 2.1 数据源(HikariCP,Spring Boot 默认连接池)
   # ------------------------------------------------------------
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ink_speaker}
+    # characterEncoding=UTF8:强制 JDBC 以 UTF-8 收发,避免 PostgreSQL 中文报错在 GBK 控制台下乱码
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ink_realm}?characterEncoding=UTF8
     username: ${DB_USERNAME:postgres}
     # 生产环境用 ENC(...) 包裹,Jasypt 在启动时解密;dev 直接用环境变量
     password: ${DB_PASSWORD:}
@@ -51,27 +52,10 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
-      pool-name: InkSpeakerHikariCP
+      pool-name: InkRealmHikariCP
 
   # ------------------------------------------------------------
-  # 2.2 JPA 配置
-  # ------------------------------------------------------------
-  jpa:
-    hibernate:
-      # 关闭自动建表,改由 Flyway 统一管理 schema
-      ddl-auto: validate
-    show-sql: false
-    open-in-view: false         # 关闭 OSIV,避免 Controller 层持有数据库连接
-    properties:
-      hibernate:
-        # Hibernate 7.x 自动检测 dialect,无需显式指定(显式指定会触发 HHH90000025 警告)
-        format_sql: false
-        jdbc.batch_size: 50     # 批量写(章节段落、向量入库用)
-        order_inserts: true
-        order_updates: true
-
-  # ------------------------------------------------------------
-  # 2.3 Flyway 数据库版本化迁移
+  # 2.2 Flyway 数据库版本化迁移
   # ------------------------------------------------------------
   # 第 9 阶段整合:V1~V7 已合并为 V1__init_schema.sql,checksum 与历史不一致
   # 已部署的旧环境需先执行 flyway repair 或清理 flyway_schema_history,
@@ -110,7 +94,7 @@ spring:
     default-property-inclusion: non_null
 
   # ------------------------------------------------------------
-  # 2.6 异步任务线程池(Spring Boot 默认 @Async 用,本项目的核心池见 ink-speaker.async)
+  # 2.6 异步任务线程池(Spring Boot 默认 @Async 用,本项目的核心池见 ink.async)
   # ------------------------------------------------------------
   task:
     execution:
@@ -119,11 +103,11 @@ spring:
         max-size: ${ASYNC_MAX_SIZE:16}
         queue-capacity: ${ASYNC_QUEUE_CAPACITY:100}
         keep-alive: 60s
-      thread-name-prefix: ink-async-
+      thread-name-prefix: ink-realm-async-
     scheduling:
       pool:
         size: 4
-      thread-name-prefix: ink-sched-
+      thread-name-prefix: ink-realm-sched-
 
 # ============================================================
 # 3. MyBatis-Plus(DAO 层,XML Mapper 扫描)
@@ -131,7 +115,7 @@ spring:
 # 注意:mybatis-plus 配置前缀为顶级 mybatis-plus,不可放在 spring 下
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
-  type-aliases-package: com.ink.speaker.**.entity
+  type-aliases-package: ink.realm.**.entity
   configuration:
     map-underscore-to-camel-case: true
     cache-enabled: false
@@ -212,9 +196,9 @@ langchain4j:
       log-responses: false
 
 # ============================================================
-# 6. Ink Speaker 业务配置
+# 6. Ink Realm 业务配置
 # ============================================================
-ink-speaker:
+ink:
   # ------------------------------------------------------------
   # 6.1 基础参数
   # ------------------------------------------------------------
@@ -301,7 +285,7 @@ ink-speaker:
   # ------------------------------------------------------------
   jwt:
     secret: ${JWT_SECRET:}
-    issuer: ${JWT_ISSUER:ink-speaker}
+    issuer: ${JWT_ISSUER:ink-realm}
     access-token-ttl: ${JWT_ACCESS_TTL:PT2H}    # 访问令牌 2 小时
     refresh-token-ttl: ${JWT_REFRESH_TTL:P7D}   # 刷新令牌 7 天
 
@@ -319,7 +303,7 @@ ink-speaker:
     tool-ttl-sec: ${TOOL_CACHE_TTL_SEC:300}    # 工具结果 TTL 5min(单章节生成周期内复用)
     tool-max-size: ${TOOL_CACHE_MAX_SIZE:2000} # 每个工具缓存最大条目数
     # 第 8 阶段:L2 Redis 缓存
-    l2-prefix: ${LLM_CACHE_L2_PREFIX:ink:llm:}  # L2 key 前缀
+    l2-prefix: ${LLM_CACHE_L2_PREFIX:ink_realm:llm:}  # L2 key 前缀
     l2-ttl: ${LLM_CACHE_L2_TTL:PT24H}           # L2 TTL(默认与 L1 一致)
 
 # ============================================================
@@ -374,9 +358,9 @@ springdoc:
     enabled: true                # dev=true, prod=false(在 prod profile 覆盖)
     operations-sorter: method
     tags-sorter: alpha
-  packages-to-scan: com.ink.speaker.**.controller
+  packages-to-scan: ink.realm.**.controller
   info:
-    title: Ink Speaker API
+    title: Ink Realm API
     version: 1.0.0
     description: 基于 LangChain4j 的 AI 小说生成 Agent
 
@@ -385,7 +369,7 @@ springdoc:
 # ============================================================
 jasypt:
   encryptor:
-    password: ${JASYPT_KEY:ink-speaker-dev-key}   # 生产环境必须从环境变量注入
+    password: ${JASYPT_KEY:ink-realm-dev-key}   # 生产环境必须从环境变量注入
     algorithm: PBEWITHHMACSHA512ANDAES_256
     iv-generator-classname: org.jasypt.iv.RandomIvGenerator
     property:
@@ -396,10 +380,14 @@ jasypt:
 # 11. 日志配置(级别由 profile 覆盖)
 # ============================================================
 logging:
+  # 强制控制台/文件以 UTF-8 输出,避免 PostgreSQL 中文报错(如"数据库不存在")在 GBK 终端下乱码
+  charset:
+    console: UTF-8
+    file: UTF-8
   level:
     root: INFO
     dev.langchain4j: INFO        # dev=DEBUG, prod=WARN
-    com.ink.speaker: INFO        # dev=DEBUG, prod=INFO
+    ink.realm: INFO        # dev=DEBUG, prod=INFO
     org.springframework.security: INFO
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN

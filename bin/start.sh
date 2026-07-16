@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Ink Speaker - JVM 启动脚本(第 7 阶段:GC 调优 + JVM 参数配置化)
+# Ink Realm - JVM 启动脚本(第 7 阶段:GC 调优 + JVM 参数配置化)
 # ============================================================
 # 用法:
 #   ./bin/start.sh              # 默认 dev profile
@@ -20,7 +20,7 @@ export SPRING_PROFILES_ACTIVE="${PROFILE}"
 # 2. 应用主 jar 定位
 # ------------------------------------------------------------
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-JAR_FILE="${APP_DIR}/target/ink-speaker-1.0.0-SNAPSHOT.jar"
+JAR_FILE="${APP_DIR}/target/ink-realm-1.0.0-SNAPSHOT.jar"
 
 if [[ ! -f "${JAR_FILE}" ]]; then
     echo "[ERROR] jar 不存在: ${JAR_FILE}" >&2

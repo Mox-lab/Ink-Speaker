@@ -1,16 +1,16 @@
 # ============================================================
-# Ink Speaker docker-compose 编排(单机版,适配 4GB 服务器)
+# Ink Realm docker-compose 编排(单机版,适配 4GB 服务器)
 # ============================================================
 # 组件:
 #   - postgres: pgvector 向量库(降低内存至 512MB)
 #   - redis:    L2 缓存 + ShedLock(关闭 AOF,降低 IO 压力)
-#   - ink-speaker: 业务应用(后端 Spring Boot)
+#   - ink-realm: 业务应用(后端 Spring Boot)
 #   - nginx:     前端静态托管 + 反向代理
 #
 # 资源分配(4GB 总量):
 #   - postgres:     512MB
 #   - redis:        96MB
-#   - ink-speaker:  2048MB(-Xmx 约 1.4GB + 元空间 + 堆外)
+#   - ink-realm:  2048MB(-Xmx 约 1.4GB + 元空间 + 堆外)
 #   - nginx:        64MB
 #   - 系统 + Docker: ~500MB
 #   - 预留:         ~800MB(避免 OOM kill)
@@ -31,17 +31,17 @@ services:
   # ------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: ink-postgres
+    container_name: ink-realm-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-ink_speaker}
+      POSTGRES_DB: ${DB_NAME:-ink_realm}
       POSTGRES_USER: ${DB_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me-in-production}
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:5432:5432"            # 仅本机访问,不对外暴露
     volumes:
-      - ${DATA_DIR:-/opt/ink-speaker/data}/postgres:/var/lib/postgresql/data
+      - ${DATA_DIR:-/opt/ink-realm/data}/postgres:/var/lib/postgresql/data
     command:
       - "postgres"
       - "-c"
@@ -67,14 +67,14 @@ services:
       retries: 10
       start_period: 30s
     networks:
-      - ink-net
+      - ink-realm-net
 
   # ------------------------------------------------------------
   # Redis 7(L2 缓存 + ShedLock 后端)
   # ------------------------------------------------------------
   redis:
     image: redis:7-alpine
-    container_name: ink-redis
+    container_name: ink-realm-redis
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"            # 仅本机访问
@@ -98,15 +98,15 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - ink-net
+      - ink-realm-net
 
   # ------------------------------------------------------------
-  # Ink Speaker 后端应用
+  # Ink Realm 后端应用
   # ------------------------------------------------------------
-  ink-speaker:
+  ink-realm:
     # 阿里云 ACR 镜像地址,从 .env.prod 注入(避免硬编码命名空间)
-    image: ${ACR_REGISTRY:-registry.cn-shenzhen.aliyuncs.com}/${ACR_NAMESPACE:-mox-lab}/ink-speaker:latest
-    container_name: ink-speaker
+    image: ${ACR_REGISTRY:-registry.cn-shenzhen.aliyuncs.com}/${ACR_NAMESPACE:-mox-lab}/ink-realm:latest
+    container_name: ink-realm
     restart: unless-stopped
     depends_on:
       postgres:
@@ -117,7 +117,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-ink_speaker}
+      DB_NAME: ${DB_NAME:-ink_realm}
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-change-me-in-production}
       REDIS_HOST: redis
@@ -126,7 +126,7 @@ services:
       # 敏感字段(必填,生产从 .env 注入)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
-      JASYPT_KEY: ${JASYPT_KEY:-ink-speaker-prod-key}
+      JASYPT_KEY: ${JASYPT_KEY:-ink-realm-prod-key}
       # JVM 参数:容器限制 2GB,-Xmx 设 1.4GB,留堆外/元空间
       JAVA_OPTS: >-
         -XX:InitialRAMPercentage=50
@@ -144,8 +144,8 @@ services:
       - "127.0.0.1:9688:9688"            # 仅本机访问,由 nginx 反代对外
       - "127.0.0.1:9689:9689"            # Actuator 仅本机(运维 SSH 隧道访问)
     volumes:
-      - ${DATA_DIR:-/opt/ink-speaker/data}/logs:/app/logs
-      - ${DATA_DIR:-/opt/ink-speaker/data}/knowledge-base:/app/knowledge-base
+      - ${DATA_DIR:-/opt/ink-realm/data}/logs:/app/logs
+      - ${DATA_DIR:-/opt/ink-realm/data}/knowledge-base:/app/knowledge-base
     deploy:
       resources:
         limits:
@@ -157,17 +157,17 @@ services:
       retries: 5
       start_period: 90s
     networks:
-      - ink-net
+      - ink-realm-net
 
   # ------------------------------------------------------------
   # Nginx 前端 + 反向代理(用户访问入口)
   # ------------------------------------------------------------
   nginx:
-    image: ${ACR_REGISTRY:-registry.cn-shenzhen.aliyuncs.com}/${ACR_NAMESPACE:-mox-lab}/ink-speaker-web:latest
-    container_name: ink-nginx
+    image: ${ACR_REGISTRY:-registry.cn-shenzhen.aliyuncs.com}/${ACR_NAMESPACE:-mox-lab}/ink-realm-web:latest
+    container_name: ink-realm-nginx
     restart: unless-stopped
     depends_on:
-      ink-speaker:
+      ink-realm:
         condition: service_healthy
     ports:
       - "80:80"                           # 对外暴露 80 端口
@@ -182,8 +182,8 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - ink-net
+      - ink-realm-net
 
 networks:
-  ink-net:
+  ink-realm-net:
     driver: bridge

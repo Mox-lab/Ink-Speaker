@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM Ink Speaker - JVM 启动脚本(Windows 版,第 7 阶段)
+REM MoYu - JVM 启动脚本(Windows 版,第 7 阶段)
 REM ============================================================
 REM 用法:
 REM   bin\start.bat              REM 默认 dev profile
@@ -28,7 +28,7 @@ REM ------------------------------------------------------------
 REM 2. 应用主 jar 定位
 REM ------------------------------------------------------------
 set APP_DIR=%~dp0..
-set JAR_FILE=%APP_DIR%\target\ink-speaker-1.0.0-SNAPSHOT.jar
+set JAR_FILE=%APP_DIR%\target\moyu-1.0.0-SNAPSHOT.jar
 
 if not exist "%JAR_FILE%" (
     echo [ERROR] jar 不存在: %JAR_FILE% 1>&2

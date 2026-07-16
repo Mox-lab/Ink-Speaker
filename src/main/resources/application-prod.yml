@@ -1,5 +1,5 @@
 # ============================================================
-# Ink Speaker - 生产环境配置(profile=prod)
+# Ink Realm - 生产环境配置(profile=prod)
 # ============================================================
 # 特点:
 #   1. Swagger UI 关闭(避免暴露接口结构)
@@ -10,13 +10,6 @@
 # ============================================================
 
 spring:
-  # JPA 生产配置
-  jpa:
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: false
-
   # 数据源(生产用大连接池)
   datasource:
     hikari:
@@ -33,7 +26,7 @@ logging:
   level:
     root: WARN
     dev.langchain4j: WARN        # 框架 WARN 以上
-    com.ink.speaker: INFO        # 业务 INFO 以上
+    ink.realm: INFO        # 业务 INFO 以上
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN

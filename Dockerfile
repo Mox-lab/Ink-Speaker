@@ -1,5 +1,5 @@
 # ============================================================
-# Ink Speaker Dockerfile(多阶段构建)
+# MoYu Dockerfile(多阶段构建)
 # ============================================================
 # 镜像分层:
 #   1. build 阶段:maven 编译,产出 fat jar
@@ -83,7 +83,7 @@ ENV TZ=Asia/Shanghai \
 WORKDIR /app
 
 # 拷贝 fat jar
-COPY --from=build /workspace/target/ink-speaker-1.0.0-SNAPSHOT.jar app.jar
+COPY --from=build /workspace/target/moyu-1.0.0-SNAPSHOT.jar app.jar
 
 # 健康检查:Actuator health 端点
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

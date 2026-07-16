@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ============================================================
-# Ink Speaker 服务器初始化脚本(纯部署模式,无源代码)
+# Ink Realm 服务器初始化脚本(纯部署模式,无源代码)
 # ============================================================
 # 功能:
 #   1. 安装 Docker + Docker Compose v2 + curl(如未装)
-#   2. 创建 /opt/ink-speaker 部署目录
+#   2. 创建 /opt/ink-realm 部署目录
 #   3. 下载部署文件(docker-compose.yml / deploy.sh / .env.prod.example)
 #   4. 提示用户编辑 .env.prod 后执行 deploy.sh
 #
@@ -28,16 +28,16 @@ fi
 # ------------------------------------------------------------
 # 配置区
 # ------------------------------------------------------------
-APP_DIR="/opt/ink-speaker"
+APP_DIR="/opt/ink-realm"
 DATA_DIR="${APP_DIR}/data"
 DEPLOY_FILES=(docker-compose.yml deploy.sh .env.prod.example)
 
 # 部署文件下载源(GitHub raw,public 仓库)
-# 默认指向 Mox-lab/Ink-Speaker main 分支
-GITHUB_RAW_BASE="https://raw.githubusercontent.com/Mox-lab/Ink-Speaker/main"
+# 默认指向 Mox-lab/ink-realm main 分支
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/Mox-lab/ink-realm/main"
 
 echo "================================================"
-echo "  Ink Speaker 服务器初始化(无源代码模式)"
+echo "  Ink Realm 服务器初始化(无源代码模式)"
 echo "================================================"
 
 # ------------------------------------------------------------
@@ -137,7 +137,7 @@ ls -la "${APP_DIR}"
 echo "[4/4] 配置防火墙..."
 if command -v ufw >/dev/null 2>&1; then
     ufw allow 22/tcp   comment 'SSH' || true
-    ufw allow 80/tcp   comment 'Ink Speaker HTTP' || true
+    ufw allow 80/tcp   comment 'Ink Realm HTTP' || true
     ufw --force enable || true
     echo "  ufw 已启用,仅放行 22/80"
 else
@@ -168,7 +168,7 @@ echo "  chmod 600 .env.prod"
 echo "  ./deploy.sh"
 echo ""
 echo "必填项(.env.prod):"
-echo "  DATA_DIR         (默认 /opt/ink-speaker/data,可保留)"
+echo "  DATA_DIR         (默认 /opt/ink-realm/data,可保留)"
 echo "  DB_PASSWORD      (openssl rand -base64 24)"
 echo "  OPENAI_API_KEY   (LLM API Key)"
 echo "  JWT_SECRET       (openssl rand -base64 48)"

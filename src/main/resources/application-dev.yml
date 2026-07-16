@@ -1,5 +1,5 @@
 # ============================================================
-# Ink Speaker - 开发环境配置(profile=dev)
+# Ink Realm - 开发环境配置(profile=dev)
 # ============================================================
 # 特点:
 #   1. Swagger UI 开放
@@ -21,18 +21,11 @@ langchain4j:
       log-requests: true
       log-responses: true
 
-ink-speaker:
+ink:
   jwt:
     secret: ${JWT_SECRET:dev-only-jwt-secret-please-set-JWT_SECRET-env-32bytes}
 
 spring:
-  # JPA 调试
-  jpa:
-    show-sql: false              # 不打印 SQL,避免表名/字段名泄露到日志
-    properties:
-      hibernate:
-        format_sql: false
-
   # 数据源(开发用小连接池)
   datasource:
     hikari:
@@ -46,7 +39,7 @@ logging:
   level:
     root: INFO
     dev.langchain4j: DEBUG       # 框架内部 Prompt/Tool 调用细节
-    com.ink.speaker: DEBUG       # 业务代码
+    ink.realm: DEBUG       # 业务代码
     org.springframework.security: DEBUG  # 鉴权链调试
     org.hibernate.SQL: WARN      # 不打印 SQL,避免表名/字段名泄露
     org.hibernate.orm.jdbc.bind: WARN

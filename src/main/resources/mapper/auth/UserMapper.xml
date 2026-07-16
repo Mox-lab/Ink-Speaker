@@ -1,67 +1,67 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.ink.speaker.auth.mapper.UserMapper">
+<mapper namespace="ink.realm.auth.mapper.UserMapper">
 
-    <resultMap id="RoleMap" type="com.ink.speaker.auth.domain.entity.Role">
+    <resultMap id="RoleMap" type="ink.realm.auth.domain.entity.Role">
         <id column="r_id" property="id"/>
         <result column="r_name" property="name"/>
-        <result column="r_created_at" property="createdAt"/>
-        <result column="r_updated_at" property="updatedAt"/>
+        <result column="r_ct_time" property="ctTime"/>
+        <result column="r_ut_time" property="utTime"/>
     </resultMap>
 
-    <resultMap id="UserMap" type="com.ink.speaker.auth.domain.entity.User">
+    <resultMap id="UserMap" type="ink.realm.auth.domain.entity.User">
         <id column="u_id" property="id"/>
         <result column="u_username" property="username"/>
+        <result column="u_nickname" property="nickname"/>
         <result column="u_password" property="password"/>
         <result column="u_enabled" property="enabled"/>
-        <result column="u_created_at" property="createdAt"/>
-        <result column="u_updated_at" property="updatedAt"/>
+        <result column="u_ct_time" property="ctTime"/>
+        <result column="u_ut_time" property="utTime"/>
         <collection property="roles" resultMap="RoleMap"/>
     </resultMap>
 
-    <resultMap id="SimpleUserMap" type="com.ink.speaker.auth.domain.entity.User">
-        <id column="id" property="id"/>
-        <result column="username" property="username"/>
-        <result column="password" property="password"/>
-        <result column="enabled" property="enabled"/>
-        <result column="created_at" property="createdAt"/>
-        <result column="updated_at" property="updatedAt"/>
-    </resultMap>
-
-    <sql id="Base_Column_List">
-        id, username, password, enabled, created_at, updated_at
-    </sql>
-
-    <select id="findByUsername" resultMap="SimpleUserMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM users
-        WHERE username = #{username}
-        LIMIT 1
-    </select>
-
+    <!-- 联表 fetch 角色:多表查询,保留 XML -->
     <select id="findByUsernameWithRoles" resultMap="UserMap">
         SELECT
             u.id           AS u_id,
             u.username     AS u_username,
+            u.nickname     AS u_nickname,
             u.password     AS u_password,
             u.enabled      AS u_enabled,
-            u.created_at   AS u_created_at,
-            u.updated_at   AS u_updated_at,
+            u.ct_time   AS u_ct_time,
+            u.ut_time   AS u_ut_time,
             r.id           AS r_id,
             r.name         AS r_name,
-            r.created_at   AS r_created_at,
-            r.updated_at   AS r_updated_at
-        FROM users u
-        LEFT JOIN user_roles ur ON ur.user_id = u.id
-        LEFT JOIN roles r       ON r.id       = ur.role_id
+            r.ct_time   AS r_ct_time,
+            r.ut_time   AS r_ut_time
+        FROM sys_users u
+        LEFT JOIN sys_user_roles ur ON ur.user_id = u.id
+        LEFT JOIN sys_roles r       ON r.id       = ur.role_id
         WHERE u.username = #{username}
+          AND u.is_del = 0
     </select>
 
-    <select id="countByUsername" resultType="long">
-        SELECT COUNT(1)
-        FROM users
-        WHERE username = #{username}
+    <!-- 绑定默认角色:多表写入,保留 XML -->
+    <insert id="bindDefaultUserRole">
+        INSERT INTO sys_user_roles (user_id, role_id)
+        SELECT #{userId}, r.id
+        FROM sys_roles r
+        WHERE r.name = 'ROLE_USER'
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <!-- 批量列举用户角色名:单一 JOIN 聚合,供管理后台列表使用(避免 N+1) -->
+    <resultMap id="UserRoleNameMap" type="ink.realm.auth.domain.vo.UserRoleName">
+        <result column="user_id" property="userId"/>
+        <result column="name" property="roleName"/>
+    </resultMap>
+    <select id="listUserRoleNames" resultMap="UserRoleNameMap">
+        SELECT ur.user_id AS user_id, r.name AS name
+          FROM sys_user_roles ur
+          JOIN sys_roles r ON r.id = ur.role_id
+         WHERE ur.user_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 
 </mapper>
