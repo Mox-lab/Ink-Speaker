@@ -127,6 +127,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
       JASYPT_KEY: ${JASYPT_KEY:-ink-realm-prod-key}
+      # 知识库目录指向挂载卷(与 volumes 中的 /app/knowledge-base 对应)
+      INK_KNOWLEDGE_BASE_DIR: /app/knowledge-base
       # JVM 参数:容器限制 2GB,-Xmx 设 1.4GB,留堆外/元空间
       JAVA_OPTS: >-
         -XX:InitialRAMPercentage=50

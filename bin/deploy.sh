@@ -32,7 +32,7 @@ mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
 
 HEALTH_PORT="${MANAGEMENT_SERVER_PORT:-9689}"
-HEALTH_URL="http://localhost:${HEALTH_PORT}/actuator/health"
+HEALTH_URL="http://127.0.0.1:${HEALTH_PORT}/actuator/health"
 HEALTH_TIMEOUT=180
 
 # ------------------------------------------------------------
@@ -155,9 +155,32 @@ backup_images() {
 # ------------------------------------------------------------
 # 滚动重启
 # ------------------------------------------------------------
+# 等待某服务容器进入 healthy(none 表示未配置 healthcheck,也视为就绪)
+wait_for_healthy() {
+    local svc=$1 max=${2:-120}
+    info "  等待 ${svc} 健康(最长 ${max}s)..."
+    local e=0
+    while [[ ${e} -lt ${max} ]]; do
+        local st
+        st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${APP_NAME}-${svc}" 2>/dev/null || echo "missing")
+        if [[ "${st}" == "healthy" || "${st}" == "none" ]]; then
+            info "  ${svc} 就绪(${st})"
+            return 0
+        fi
+        sleep 5; e=$((e + 5))
+    done
+    warn "  ${svc} ${max}s 内未健康,继续(可能后端启动失败)"
+}
+
 restart_services() {
     info "重启服务..."
     cd "${APP_DIR}"
+
+    # 先确保基础设施(postgres/redis)已启动并健康,否则后端会因连不上 DB 而报 08001
+    info "启动基础设施(postgres/redis)..."
+    docker compose --env-file "${ENV_FILE}" up -d postgres redis
+    wait_for_healthy postgres 180
+    wait_for_healthy redis 60
 
     if [[ "${DEPLOY_BACKEND:-yes}" == "yes" ]]; then
         docker compose --env-file "${ENV_FILE}" up -d --no-deps --force-recreate "${APP_NAME}"
@@ -189,7 +212,7 @@ restart_services() {
         info "等待 nginx 健康检查..."
         local web_elapsed=0
         while [[ ${web_elapsed} -lt 30 ]]; do
-            if curl -fsS http://localhost/ >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1/ >/dev/null 2>&1; then
                 info "  nginx 健康检查通过(用时 ${web_elapsed}s)"
                 return 0
             fi

@@ -44,6 +44,12 @@ public class NovelOverviewVo implements Serializable {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
+    /**
+     * 当前用户对本书的角色(BASE-11 多用户协作):owner / editor / viewer / admin。
+     * <p>前端据此决定是否展示"协作者管理"面板、编辑/删除按钮等。</p>
+     */
+    private String role;
+
     /** 章节总数。 */
     private int chapterCount;
     /** 最大章节序号(无章节时为 null)。 */

@@ -9,6 +9,7 @@ import ink.realm.auth.domain.entity.User;
 import ink.realm.novel.domain.entity.Novel;
 import ink.realm.novel.domain.entity.NovelChapterContent;
 import ink.realm.novel.domain.entity.NovelCharacter;
+import ink.realm.novel.domain.entity.NovelCollaborator;
 import ink.realm.novel.domain.entity.NovelOutline;
 import ink.realm.novel.domain.entity.NovelWorldSetting;
 import ink.realm.novel.mapper.NovelChapterContentMapper;
@@ -17,7 +18,9 @@ import ink.realm.novel.mapper.NovelCharacterMapper;
 import ink.realm.novel.mapper.NovelMapper;
 import ink.realm.novel.mapper.NovelOutlineMapper;
 import ink.realm.novel.mapper.NovelReviewIssueMapper;
+import ink.realm.novel.mapper.NovelCollaboratorMapper;
 import ink.realm.novel.mapper.NovelWorldSettingMapper;
+import ink.realm.novel.service.CollaboratorService;
 import ink.realm.novel.service.NovelService;
 import ink.realm.auth.mapper.UserMapper;
 import ink.realm.config.security.SecurityRoles;
@@ -48,6 +51,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -103,15 +107,42 @@ public class NovelServiceImpl implements NovelService {
     private final NovelChapterTimelineMapper timelineDao;
     private final NovelReviewIssueMapper reviewIssueDao;
     private final UserMapper userMapper;
+    private final NovelCollaboratorMapper collaboratorMapper;
+    private final CollaboratorService collaboratorService;
 
     @Override
     public List<NovelVo> listNovels() {
         Long userId = NovelContext.requireUserId();
-        List<NovelVo> novels = novelDao.listByOwnerId(userId).stream()
-                .map(VoConverters::toVo)
+
+        // 1. 自己 owner 的小说
+        List<NovelVo> owned = novelDao.listByOwnerId(userId).stream()
+                .map(n -> {
+                    NovelVo v = VoConverters.toVo(n);
+                    v.setCollaborator(false);
+                    v.setCollaboratorRole(null);
+                    return v;
+                })
                 .toList();
-        log.info("[listNovels] userId={}, size={}", userId, novels.size());
-        return novels;
+
+        // 2. 协作的小说(BASE-11):通过 novel_collaborator 反查
+        List<Long> collabNovelIds = collaboratorMapper.listNovelIdsByUserId(userId);
+        List<NovelVo> collab = collabNovelIds.stream()
+                .map(novelDao::selectById)
+                .filter(Objects::nonNull)
+                .map(n -> {
+                    NovelVo v = VoConverters.toVo(n);
+                    v.setCollaborator(true);
+                    // 角色:owner 不会出现在协作表里,这里只会是 editor / viewer
+                    NovelCollaborator c = collaboratorMapper.findByNovelIdAndUserId(n.getId(), userId);
+                    v.setCollaboratorRole(c != null ? c.getRole() : null);
+                    return v;
+                })
+                .toList();
+
+        List<NovelVo> result = new ArrayList<>(owned);
+        result.addAll(collab);
+        log.info("[listNovels] userId={}, owned={}, collab={}", userId, owned.size(), collab.size());
+        return result;
     }
 
     @Override
@@ -132,6 +163,11 @@ public class NovelServiceImpl implements NovelService {
     @Override
     public SaveResultVo createNovel(NovelCreateRequest request) {
         Long userId = NovelContext.requireUserId();
+        // 用户维度小说名唯一:同一用户下不允许有重名小说
+        if (novelDao.findByOwnerAndTitle(userId, request.title()).isPresent()) {
+            throw new BusinessException(ResultCode.CONFLICT,
+                    "你已创建同名小说《" + request.title() + "》,请勿重复创建");
+        }
         // 作者名强制取当前登录用户的昵称(昵称为空时回退用户名),不再信任前端传入值
         String author = resolveCurrentAuthorName();
         Novel entity = Novel.builder()
@@ -153,6 +189,12 @@ public class NovelServiceImpl implements NovelService {
         Long userId = NovelContext.requireUserId();
         // 管理员不可修改他人小说(只读约束),非 owner 一律 403
         Novel entity = requireModifiableNovel(id, userId);
+        // 用户维度小说名唯一:若改名,不能与同用户下其它小说重名
+        if (!entity.getTitle().equals(request.title())
+                && novelDao.findByOwnerAndTitleExcluding(userId, request.title(), id).isPresent()) {
+            throw new BusinessException(ResultCode.CONFLICT,
+                    "你已创建同名小说《" + request.title() + "》,请勿重复命名");
+        }
         entity.setTitle(request.title());
         // 作者名始终取当前登录用户的昵称,忽略前端传入值
         entity.setAuthor(resolveCurrentAuthorName());
@@ -210,14 +252,17 @@ public class NovelServiceImpl implements NovelService {
     @Override
     public NovelVo getNovel(Long id) {
         Long userId = NovelContext.requireUserId();
-        Novel entity = requireOwnedOrAdminReadOnly(id, userId);
-        return VoConverters.toVo(entity);
+        // owner / editor / viewer / admin 均可读取(BASE-11 多用户协作)
+        collaboratorService.requireViewerAccess(id, userId);
+        return VoConverters.toVo(novelDao.selectById(id));
     }
 
     @Override
     public NovelOverviewVo getNovelOverview(Long id) {
         Long userId = NovelContext.requireUserId();
-        Novel entity = requireOwnedOrAdminReadOnly(id, userId);
+        // owner / editor / viewer / admin 均可读取(BASE-11 多用户协作)
+        collaboratorService.requireViewerAccess(id, userId);
+        Novel entity = novelDao.selectById(id);
 
         List<NovelChapterContent> recentChapters = chapterDao
                 .listByNovelIdOrderByChapterNoAsc(id);
@@ -263,6 +308,7 @@ public class NovelServiceImpl implements NovelService {
                 .recentChapters(recentChapterVos)
                 .outlines(outlineVos)
                 .timeline(timeline)
+                .role(collaboratorService.resolveRole(id, userId))
                 .build();
     }
 
@@ -446,7 +492,9 @@ public class NovelServiceImpl implements NovelService {
     @Override
     public NovelExportPayload exportNovel(Long id, String format) {
         Long userId = NovelContext.requireUserId();
-        Novel entity = requireOwnedOrAdminReadOnly(id, userId);
+        // owner / editor / viewer / admin 均可导出(BASE-11 多用户协作)
+        collaboratorService.requireViewerAccess(id, userId);
+        Novel entity = novelDao.selectById(id);
 
         String fmt = normalizeFormat(format);
         List<NovelChapterContent> chapters = chapterDao.listByNovelIdOrderByChapterNoAsc(id);

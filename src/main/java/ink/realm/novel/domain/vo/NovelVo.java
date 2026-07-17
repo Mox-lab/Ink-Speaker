@@ -31,4 +31,16 @@ public class NovelVo implements Serializable {
     private String description;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /**
+     * 是否为"我协作的小说"(BASE-11)。
+     * <p>true 表示当前用户是该书协作者(非 owner);false 表示是自己所拥有的小说。</p>
+     */
+    private boolean collaborator;
+
+    /**
+     * 协作角色(BASE-11):editor / viewer。
+     * <p>仅当 {@link #collaborator} 为 true 时有意义;自己拥有的小说此字段为 null。</p>
+     */
+    private String collaboratorRole;
 }

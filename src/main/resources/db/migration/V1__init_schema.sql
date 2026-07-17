@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS novel (
 
 CREATE INDEX IF NOT EXISTS idx_novel_owner ON novel(owner_id);
 CREATE INDEX IF NOT EXISTS idx_novel_shared ON novel(shared_for_reference) WHERE shared_for_reference = true;
+-- 用户维度小说名唯一:同一 owner_id 下 title 不可重复(不同用户可重名)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_novel_owner_title ON novel(owner_id, title);
 
 -- ============================================================
 -- 2. 人物档案表(含 identity / appearance / relationships)

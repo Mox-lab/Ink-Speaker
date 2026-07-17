@@ -2,10 +2,12 @@ package ink.realm.novel.service.impl;
 
 import ink.realm.common.exception.BusinessException;
 import ink.realm.common.result.ResultCode;
+import ink.realm.common.context.NovelContext;
 import ink.realm.novel.mapper.NovelOutlineMapper;
 import ink.realm.novel.domain.dto.OutlineActivateRequest;
 import ink.realm.novel.domain.dto.OutlineSaveRequest;
 import ink.realm.novel.domain.entity.NovelOutline;
+import ink.realm.novel.service.CollaboratorService;
 import ink.realm.novel.service.OutlineService;
 import ink.realm.novel.domain.vo.OutlineActiveVo;
 import ink.realm.novel.domain.vo.OutlineDetailVo;
@@ -32,6 +34,7 @@ import java.util.Optional;
 public class OutlineServiceImpl implements OutlineService {
 
     private final NovelOutlineMapper outlineDao;
+    private final CollaboratorService collaboratorService;
 
     @Override
     public List<OutlineSummaryVo> listOutlines(Long novelId) {
@@ -61,6 +64,8 @@ public class OutlineServiceImpl implements OutlineService {
     @Transactional(rollbackFor = Exception.class)
     public OutlineSaveResultVo saveOutline(OutlineSaveRequest request) {
         Long novelId = request.novelId() != null ? request.novelId() : NovelConstants.DEFAULT_NOVEL_ID;
+        // 仅 owner / editor 可保存大纲(BASE-11 多用户协作)
+        collaboratorService.requireEditorAccess(novelId, NovelContext.requireUserId());
         Integer chapters = request.chapters() != null ? request.chapters() : 20;
         String content = request.content();
 
@@ -87,6 +92,8 @@ public class OutlineServiceImpl implements OutlineService {
     @Transactional(rollbackFor = Exception.class)
     public boolean activateOutline(OutlineActivateRequest request) {
         Long novelId = request.novelId() != null ? request.novelId() : NovelConstants.DEFAULT_NOVEL_ID;
+        // 仅 owner / editor 可切换激活版本(BASE-11 多用户协作)
+        collaboratorService.requireEditorAccess(novelId, NovelContext.requireUserId());
         Long id = request.id();
         outlineDao.clearActiveFlag(novelId);
         int updated = outlineDao.updateActive(id, true);
@@ -97,6 +104,12 @@ public class OutlineServiceImpl implements OutlineService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteOutline(Long id) {
+        NovelOutline outline = outlineDao.selectById(id);
+        if (outline == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "大纲不存在: " + id);
+        }
+        // 仅 owner / editor 可删除大纲(BASE-11 多用户协作)
+        collaboratorService.requireEditorAccess(outline.getNovelId(), NovelContext.requireUserId());
         outlineDao.deleteById(id);
     }
 }

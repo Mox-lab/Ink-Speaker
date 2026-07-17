@@ -25,6 +25,21 @@ public interface NovelMapper extends BaseMapper<Novel> {
                 new LambdaQueryWrapper<Novel>().eq(Novel::getTitle, title)));
     }
 
+    /** 按 ownerId + 标题精确查找(用户维度小说名唯一)。 */
+    default Optional<Novel> findByOwnerAndTitle(Long ownerId, String title) {
+        return Optional.ofNullable(this.selectOne(new LambdaQueryWrapper<Novel>()
+                .eq(Novel::getOwnerId, ownerId)
+                .eq(Novel::getTitle, title)));
+    }
+
+    /** 按 ownerId + 标题查找,排除指定小说(用于重命名时校验不与其它小说重名)。 */
+    default Optional<Novel> findByOwnerAndTitleExcluding(Long ownerId, String title, Long excludeId) {
+        return Optional.ofNullable(this.selectOne(new LambdaQueryWrapper<Novel>()
+                .eq(Novel::getOwnerId, ownerId)
+                .eq(Novel::getTitle, title)
+                .ne(Novel::getId, excludeId)));
+    }
+
     /** 列出指定用户拥有的全部小说(R5 用户隔离)。 */
     default List<Novel> listByOwnerId(Long ownerId) {
         return this.selectList(new LambdaQueryWrapper<Novel>()

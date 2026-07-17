@@ -203,7 +203,9 @@ ink:
   # 6.1 基础参数
   # ------------------------------------------------------------
   # 小说设定库目录(世界观/人物/大纲等参考文档)
-  knowledge-base-dir: ./knowledge-base
+  # 默认放到源码树之外(后端目录的同级 ink-realm-data 下),避免污染工程目录;
+  # Docker 下由 docker-compose 通过 INK_KNOWLEDGE_BASE_DIR 覆盖为挂载卷 /app/knowledge-base。
+  knowledge-base-dir: ${INK_KNOWLEDGE_BASE_DIR:../ink-realm-data/knowledge-base}
   # 嵌入维度(all-minilm-l6-v2 模型为 384 维)
   embedding-dimension: 384
   # RAG 检索 top-k

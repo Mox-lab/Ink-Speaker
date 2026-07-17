@@ -30,7 +30,7 @@ fi
 # ------------------------------------------------------------
 APP_DIR="/opt/ink-realm"
 DATA_DIR="${APP_DIR}/data"
-DEPLOY_FILES=(docker-compose.yml deploy.sh .env.prod.example)
+DEPLOY_FILES=(docker-compose.yml deploy.sh teardown.sh setup-deploy.sh .env.prod.example)
 
 # 部署文件下载源(GitHub raw,public 仓库)
 # 默认指向 Mox-lab/ink-realm main 分支

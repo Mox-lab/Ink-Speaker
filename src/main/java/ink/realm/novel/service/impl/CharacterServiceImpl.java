@@ -5,7 +5,11 @@ import ink.realm.novel.mapper.NovelCharacterMapper;
 import ink.realm.novel.domain.dto.CharacterBatchSaveRequest;
 import ink.realm.novel.domain.entity.NovelChapterContent;
 import ink.realm.novel.domain.entity.NovelCharacter;
+import ink.realm.common.context.NovelContext;
+import ink.realm.common.exception.BusinessException;
+import ink.realm.common.result.ResultCode;
 import ink.realm.novel.service.CharacterService;
+import ink.realm.novel.service.CollaboratorService;
 import ink.realm.novel.domain.vo.CharacterBatchSaveResultVo;
 import ink.realm.novel.domain.vo.CharacterVo;
 import ink.realm.novel.domain.vo.ChapterSummaryVo;
@@ -34,6 +38,7 @@ public class CharacterServiceImpl implements CharacterService {
 
     private final NovelCharacterMapper characterDao;
     private final NovelChapterContentMapper chapterDao;
+    private final CollaboratorService collaboratorService;
 
     @Override
     public List<CharacterVo> listCharacters(Long novelId) {
@@ -47,6 +52,8 @@ public class CharacterServiceImpl implements CharacterService {
     @Transactional(rollbackFor = Exception.class)
     public CharacterBatchSaveResultVo saveBatch(CharacterBatchSaveRequest request) {
         Long novelId = request.novelId() != null ? request.novelId() : NovelConstants.DEFAULT_NOVEL_ID;
+        // 仅 owner / editor 可保存人物(BASE-11 多用户协作)
+        collaboratorService.requireEditorAccess(novelId, NovelContext.requireUserId());
         int saved = 0;
         for (CharacterBatchSaveRequest.CharacterItem c : request.characters()) {
             NovelCharacter entity = resolveOrCreate(novelId, c.name());
@@ -104,6 +111,12 @@ public class CharacterServiceImpl implements CharacterService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteCharacter(Long id) {
+        NovelCharacter character = characterDao.selectById(id);
+        if (character == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "人物不存在: " + id);
+        }
+        // 仅 owner / editor 可删除人物(BASE-11 多用户协作)
+        collaboratorService.requireEditorAccess(character.getNovelId(), NovelContext.requireUserId());
         characterDao.deleteById(id);
     }
 

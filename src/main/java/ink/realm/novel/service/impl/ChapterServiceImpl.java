@@ -10,6 +10,7 @@ import ink.realm.novel.mapper.NovelChapterHistoryMapper;
 import ink.realm.novel.domain.dto.ChapterSaveRequest;
 import ink.realm.novel.domain.entity.NovelChapterContent;
 import ink.realm.novel.service.ChapterService;
+import ink.realm.novel.service.CollaboratorService;
 import ink.realm.novel.domain.vo.ChapterDetailVo;
 import ink.realm.novel.domain.vo.ChapterSummaryVo;
 import ink.realm.novel.domain.vo.SaveResultVo;
@@ -57,6 +58,7 @@ public class ChapterServiceImpl implements ChapterService {
     private final NovelChapterHistoryMapper historyDao;
     private final LongTermMemoryExtractor memoryExtractor;
     private final DirectorAgent directorAgent;
+    private final CollaboratorService collaboratorService;
 
     @Override
     public List<ChapterSummaryVo> listChapters(Long novelId) {
@@ -94,6 +96,8 @@ public class ChapterServiceImpl implements ChapterService {
     @Transactional(rollbackFor = Exception.class)
     public SaveResultVo saveChapter(ChapterSaveRequest request) {
         Long novelId = resolveNovelId(request.novelId());
+        // 仅 owner / editor 可编辑章节(BASE-11 多用户协作)
+        collaboratorService.requireEditorAccess(novelId, NovelContext.requireUserId());
         Integer chapterNo = request.chapterNo();
         String content = request.content();
 
@@ -181,6 +185,12 @@ public class ChapterServiceImpl implements ChapterService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteChapter(Long id) {
+        NovelChapterContent c = chapterDao.selectById(id);
+        if (c == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "章节不存在: " + id);
+        }
+        // 仅 owner / editor 可删除章节(BASE-11 多用户协作)
+        collaboratorService.requireEditorAccess(c.getNovelId(), NovelContext.requireUserId());
         chapterDao.deleteById(id);
     }
 

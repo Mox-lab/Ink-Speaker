@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="ink.realm.novel.mapper.NovelCollaboratorMapper">
+
+    <!-- BASE-11 多用户协作:列出协作者并联表带出被邀请用户的用户名 -->
+    <select id="listByNovelId" resultType="ink.realm.novel.domain.vo.CollaboratorVo">
+        SELECT
+            c.id            AS id,
+            c.novel_id      AS novelId,
+            c.user_id       AS userId,
+            u.username      AS username,
+            c.role          AS role,
+            c.ct_time       AS created_at
+        FROM novel_collaborator c
+        LEFT JOIN sys_users u ON u.id = c.user_id
+        WHERE c.novel_id = #{novelId}
+          AND c.is_del = 0
+        ORDER BY c.ct_time ASC
+    </select>
+
+</mapper>
