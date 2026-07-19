@@ -6,13 +6,15 @@ import ink.realm.common.context.NovelContext;
 import ink.realm.common.result.ResultCode;
 import ink.realm.novel.domain.entity.Novel;
 import ink.realm.novel.domain.entity.NovelChapterContent;
-import ink.realm.novel.domain.entity.NovelCharacter;
+import ink.realm.novel.domain.entity.NovelWorldSetting;
+import ink.realm.novel.domain.vo.CharacterVo;
 import ink.realm.novel.domain.vo.ContinuationSuggestionVo;
 import ink.realm.novel.mapper.NovelChapterContentMapper;
-import ink.realm.novel.mapper.NovelCharacterMapper;
 import ink.realm.novel.mapper.NovelMapper;
 import ink.realm.novel.mapper.NovelOutlineMapper;
+import ink.realm.novel.mapper.NovelWorldSettingMapper;
 import ink.realm.novel.service.ContinuationService;
+import ink.realm.util.VoConverters;
 import ink.realm.util.ArgsUtil;
 import ink.realm.util.JsonUtil;
 import lombok.RequiredArgsConstructor;
@@ -64,7 +66,7 @@ public class ContinuationServiceImpl implements ContinuationService {
     private final NovelMapper novelDao;
     private final NovelChapterContentMapper chapterDao;
     private final NovelOutlineMapper outlineDao;
-    private final NovelCharacterMapper characterDao;
+    private final NovelWorldSettingMapper worldSettingDao;
 
     @Override
     public ContinuationSuggestionVo suggestNextChapter(Long novelId) {
@@ -84,7 +86,8 @@ public class ContinuationServiceImpl implements ContinuationService {
         String outlineText = outlineDao.findByNovelIdAndActiveTrue(novelId)
                 .map(o -> ArgsUtil.truncate(o.getContent(), OUTLINE_SUMMARY_MAX))
                 .orElse("");
-        String charactersText = buildCharactersText(characterDao.listByNovelId(novelId));
+        String charactersText = buildCharactersText(worldSettingDao.listByNovelIdAndCategory(novelId, "人物")
+                .stream().map(VoConverters::toCharacterVo).toList());
 
         ContinuationSuggestionVo fallback = ContinuationSuggestionVo.builder()
                 .nextChapterNo(nextChapterNo)
@@ -133,12 +136,12 @@ public class ContinuationServiceImpl implements ContinuationService {
     }
 
     /** 拼接人物档案文本(限制总长度)。 */
-    private String buildCharactersText(List<NovelCharacter> characters) {
+    private String buildCharactersText(List<CharacterVo> characters) {
         if (characters == null || characters.isEmpty()) {
             return "(暂无人物档案)";
         }
         StringBuilder sb = new StringBuilder();
-        for (NovelCharacter c : characters) {
+        for (CharacterVo c : characters) {
             sb.append("- ").append(c.getName());
             if (c.getPersonality() != null && !c.getPersonality().isBlank()) {
                 sb.append(" / ").append(c.getPersonality());

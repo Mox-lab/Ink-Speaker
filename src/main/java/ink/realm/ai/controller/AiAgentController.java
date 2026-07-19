@@ -49,7 +49,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.ExecutorService;
 
 /**
@@ -64,9 +68,8 @@ import java.util.concurrent.ExecutorService;
 @Tag(name = "Agent", description = "小说创作 Agent 主流程接口")
 public class AiAgentController {
 
-    private static final int OUTLINE_BATCH_SIZE = 5;
-    private static final int OUTLINE_TAIL_HINT_CHARS = 1500;
     private static final long SSE_TIMEOUT_MS = 120_000L;
+    private static final int FALLBACK_CHAPTERS = 20;
 
     private final ChatModel chatModel;
     private final StreamingChatModel streamingChatModel;
@@ -128,43 +131,198 @@ public class AiAgentController {
     }
 
     /**
-     * 阶段 3 / 5 — 大纲。
-     * <p>给定蓝图、设定、章节数,生成卷/章两级大纲。
-     * chapters > 30 时分批生成,避免单次请求超长触发上游 504。</p>
-     * <p>支持「续生」:传入 lastOutline(已有大纲尾部)和 startChapter(续生起始章号)时,
-     * LLM 会接续在已有大纲之后生成,而不是从头重写。</p>
+     * 阶段 3 / 5 — 大纲(全量快捷生成)。
+     * <p>两步式生成:先 {@code planVolumes} 规划卷结构(可由前端编辑后回传 volumePlan),
+     * 再逐卷 {@code expandVolume} 展开为逐章细纲,每卷生成后 {@code selfCheck} 自检,
+     * 偏离主题 / 与前文矛盾 / 编号不连续时带反馈重试一次。
+     * <p>新流程推荐:先调 {@code /outline/plan} 规划,再逐卷调 {@code /outline/volume} 展开,
+     * 以获得更可控、可中断的逐卷体验。</p>
      */
-    @Operation(summary = "阶段 3/5 大纲", description = "分批生成大纲,支持续生")
+    @Operation(summary = "阶段 3/5 大纲", description = "卷规划 + 分卷展开 + 自检,卷数章数由模型决定")
     @PostMapping("/outline")
     public Result<OutlineResponse> outline(@RequestBody @Valid OutlineRequest request) {
         String blueprint = resolveBlueprint(request);
         String setting = request.setting() != null ? request.setting() : "";
-        int chapters = request.chapters() != null ? request.chapters() : 20;
-        int startChapter = request.startChapter() != null ? request.startChapter() : 1;
-        String lastOutline = request.lastOutline();
-        boolean isContinue = lastOutline != null && !lastOutline.isBlank() && startChapter > 1;
-        log.info("[/outline] chapters={}, startChapter={}, continue={}", chapters, startChapter, isContinue);
+        String volumePlanOverride = request.volumePlan();
+        String theme = (request.theme() != null && !request.theme().isBlank())
+                ? request.theme() : blueprint;
+        log.info("[/outline] customPlan={}",
+                volumePlanOverride != null && !volumePlanOverride.isBlank());
 
         try {
-            String outlineText = generateOutlineBatches(blueprint, setting, chapters, startChapter, lastOutline, isContinue);
+            String plan = (volumePlanOverride != null && !volumePlanOverride.isBlank())
+                    ? volumePlanOverride
+                    : llmCacheService.planVolumes(blueprint, setting);
+            List<VolumeSpec> volumes = buildVolumes(plan);
+            String outlineText = expandVolumes(blueprint, setting, theme, plan, volumes);
+            int totalChapters = volumes.stream().mapToInt(VolumeSpec::chapterCount).sum();
+
             if (outlineText.isBlank()) {
-                log.warn("[/outline] all batches empty, likely finish_reason=length (reasoning burned tokens)");
+                log.warn("[/outline] empty result, likely finish_reason=length (reasoning burned tokens)");
                 return Result.success(OutlineResponse.builder()
-                        .chapters(chapters)
                         .error("大纲生成失败:模型输出为空(可能因思维链烧光 token,请调高 max-tokens 或减少章节数后重试)")
                         .build());
             }
             return Result.success(OutlineResponse.builder()
-                    .chapters(chapters)
+                    .chapters(totalChapters)
                     .outline(outlineText)
-                    .startChapter(startChapter)
-                    .continued(isContinue)
+                    .volumePlan(plan)
+                    .volumes(volumes.isEmpty() ? null : volumes.size())
                     .build());
         } catch (Exception e) {
-            log.error("[/outline] fail chapters={}", chapters, e);
+            log.error("[/outline] fail", e);
             throw new BusinessException(ResultCode.BUSINESS_ERROR,
                     "大纲生成失败:" + ArgsUtil.reasonOf(e));
         }
+    }
+
+    /**
+     * 阶段 3 / 5 — 仅规划卷结构(供前端编辑后回传 volumePlan 再生成大纲)。
+     */
+    @Operation(summary = "大纲卷规划", description = "只生成卷结构计划,可编辑后回传 /api/outline 的 volumePlan 字段")
+    @PostMapping("/outline/plan")
+    public Result<OutlineResponse> outlinePlan(@RequestBody @Valid OutlineRequest request) {
+        String blueprint = resolveBlueprint(request);
+        String setting = request.setting() != null ? request.setting() : "";
+        log.info("[/outline/plan]");
+        try {
+            String plan = llmCacheService.planVolumes(blueprint, setting);
+            List<VolumeSpec> volumes = buildVolumes(plan);
+            int totalChapters = volumes.stream().mapToInt(VolumeSpec::chapterCount).sum();
+            return Result.success(OutlineResponse.builder()
+                    .chapters(totalChapters)
+                    .outline(plan)
+                    .volumePlan(plan)
+                    .volumes(volumes.isEmpty() ? null : volumes.size())
+                    .build());
+        } catch (Exception e) {
+            log.error("[/outline/plan] fail", e);
+            throw new BusinessException(ResultCode.BUSINESS_ERROR,
+                    "卷规划失败:" + ArgsUtil.reasonOf(e));
+        }
+    }
+
+    /**
+     * 阶段 3 / 5 — 展开单卷细纲。
+     * <p>前端完成卷规划后,针对某一卷调用本接口,基于整书卷规划展开该卷的逐章细纲。
+     * 可逐卷调用,也可在前端循环调用实现"展开全部"。</p>
+     */
+    @Operation(summary = "展开单卷细纲", description = "基于卷规划展开指定卷的逐章细纲")
+    @PostMapping("/outline/volume")
+    public Result<OutlineResponse> outlineVolume(@RequestBody @Valid OutlineRequest request) {
+        String blueprint = resolveBlueprint(request);
+        String setting = request.setting() != null ? request.setting() : "";
+        String volumePlan = request.volumePlan();
+        int volumeIndex = request.volumeIndex() != null ? request.volumeIndex() : 1;
+        String theme = (request.theme() != null && !request.theme().isBlank())
+                ? request.theme() : blueprint;
+        if (volumePlan == null || volumePlan.isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_INVALID, "请先完成卷规划再展开本卷细纲");
+        }
+        log.info("[/outline/volume] index={}", volumeIndex);
+        try {
+            List<VolumeSpec> volumes = buildVolumes(volumePlan);
+            VolumeSpec target = volumes.stream()
+                    .filter(v -> v.index() == volumeIndex)
+                    .findFirst()
+                    .orElse(null);
+            if (target == null) {
+                return Result.success(OutlineResponse.builder()
+                        .error("未找到第 " + volumeIndex + " 卷,请检查卷规划")
+                        .build());
+            }
+            String seg = llmCacheService.expandVolume(blueprint, setting, volumePlan, "",
+                    target.name(), target.arc(), target.start(), target.end());
+            // 自检:偏离主题 / 与前文矛盾 / 编号不连续 → 带反馈重试一次
+            String context = "【主题】" + theme + "\n【整书规划】\n" + volumePlan;
+            String check = llmCacheService.selfCheck(theme, seg, context);
+            if (check != null && check.contains("需修正")) {
+                log.info("[/outline/volume] 第 {} 卷自检未通过,带反馈重试", volumeIndex);
+                String retryBlueprint = blueprint + "\n\n【自检反馈,必须修正以下问题后重新输出本卷细纲】\n" + check;
+                String seg2 = llmCacheService.expandVolume(retryBlueprint, setting, volumePlan, "",
+                        target.name(), target.arc(), target.start(), target.end());
+                if (seg2 != null && !seg2.isBlank()) {
+                    seg = seg2;
+                }
+            }
+            if (seg == null || seg.isBlank()) {
+                return Result.success(OutlineResponse.builder()
+                        .error("第 " + volumeIndex + " 卷展开失败,请重试")
+                        .build());
+            }
+            return Result.success(OutlineResponse.builder()
+                    .chapters(target.end() - target.start() + 1)
+                    .outline(seg)
+                    .volumePlan(volumePlan)
+                    .volumes(volumeIndex)
+                    .build());
+        } catch (Exception e) {
+            log.error("[/outline/volume] fail index={}", volumeIndex, e);
+            throw new BusinessException(ResultCode.BUSINESS_ERROR,
+                    "展开卷细纲失败:" + ArgsUtil.reasonOf(e));
+        }
+    }
+
+    /**
+     * 解析卷规划文本为结构化卷列表,并按规划中的"章数"分配起止章号(全局连续)。
+     * <p>各卷章数直接取自规划文本,全书章数 = 各卷章数之和(不再由外部章节数约束)。
+     * 若 LLM 未遵循格式,降级为单卷承载默认章节数。</p>
+     */
+    private List<VolumeSpec> buildVolumes(String plan) {
+        List<VolumeSpec> list = new ArrayList<>();
+        Pattern volRe = Pattern.compile("##\\s*第\\s*(\\d+)\\s*卷\\s*[·:：]?\\s*(.+)");
+        Pattern arcRe = Pattern.compile("卷主线[:：]\\s*(.+)");
+        Pattern chRe = Pattern.compile("章数[:：]\\s*(\\d+)");
+        Integer curIdx = null;
+        String curName = null;
+        String curArc = null;
+        Integer curCh = null;
+        for (String line : plan.split("\n")) {
+            String t = line.trim();
+            Matcher vm = volRe.matcher(t);
+            if (vm.find()) {
+                if (curIdx != null) {
+                    list.add(new VolumeSpec(curIdx, curName, curArc, curCh != null ? curCh : 0));
+                }
+                curIdx = Integer.parseInt(vm.group(1));
+                curName = vm.group(2).trim();
+                curArc = null;
+                curCh = null;
+                continue;
+            }
+            if (curIdx == null) {
+                continue;
+            }
+            Matcher am = arcRe.matcher(t);
+            if (am.find()) {
+                curArc = am.group(1).trim();
+                continue;
+            }
+            Matcher cm = chRe.matcher(t);
+            if (cm.find()) {
+                curCh = Integer.parseInt(cm.group(1));
+            }
+        }
+        if (curIdx != null) {
+            list.add(new VolumeSpec(curIdx, curName, curArc, curCh != null ? curCh : 0));
+        }
+
+        if (list.isEmpty()) {
+            // 降级:单卷承载默认章节数
+            list.add(new VolumeSpec(1, "正文", "", FALLBACK_CHAPTERS));
+        }
+        // 按卷号排序,规整起止章号(全局连续,由各卷"章数"之和决定全书总量)
+        list.sort(Comparator.comparingInt(VolumeSpec::index));
+        int cursor = 1;
+        List<VolumeSpec> resolved = new ArrayList<>();
+        for (VolumeSpec v : list) {
+            int count = Math.max(1, v.chapterCount());
+            int start = cursor;
+            int end = cursor + count - 1;
+            resolved.add(new VolumeSpec(v.index(), v.name(), v.arc(), count, start, end));
+            cursor = end + 1;
+        }
+        return resolved;
     }
 
     /**
@@ -180,36 +338,75 @@ public class AiAgentController {
     }
 
     /**
-     * 分批调用 outlineAgent 生成完整大纲文本。
-     * <p>每批 OUTLINE_BATCH_SIZE 章,单次 LLM 调用控制在 60s 内避免上游 nginx 504。</p>
+     * 逐卷展开为逐章细纲,携带前情 + 自检机制。
+     * <p>每卷展开后做主题 / 连贯 / 编号自检,命中"需修正"时带反馈重试一次。
+     * 已完成的各卷摘要(prevVolumes)持续累积,作为下一卷生成的"前情",保证跨卷连贯。</p>
      */
-    private String generateOutlineBatches(String blueprint, String setting, int chapters,
-                                          int startChapter, String lastOutline, boolean isContinue) {
+    private String expandVolumes(String blueprint, String setting, String theme,
+                                 String plan, List<VolumeSpec> volumes) {
         StringBuilder sb = new StringBuilder();
-        int cursor = startChapter;
-        int endChapter = startChapter + chapters - 1;
-        String tailHint = isContinue
-                ? "\n\n【前文大纲尾部(请接续,不要重复)】\n"
-                        + ArgsUtil.truncateTail(lastOutline, OUTLINE_TAIL_HINT_CHARS)
-                : "";
-
-        while (cursor <= endChapter) {
-            int end = Math.min(cursor + OUTLINE_BATCH_SIZE - 1, endChapter);
-            int span = end - cursor + 1;
-            String segHint = blueprint + tailHint
-                    + "\n(本次只生成第 " + cursor + " - " + end + " 章"
-                    + (isContinue ? ",接续在已生成内容之后" : "")
-                    + ",共 " + chapters + " 章,必须连续编号,不要重复前面内容)";
-            log.info("[/outline] batch {}-{} (span={})", cursor, end, span);
-            String seg = llmCacheService.generateOutlineBatch(segHint, setting, span);
-            if (seg == null || seg.isBlank()) {
-                log.warn("[/outline] batch {}-{} returned empty, likely finish_reason=length", cursor, end);
-            } else {
-                sb.append(seg).append("\n\n");
+        StringBuilder prevVolumes = new StringBuilder();
+        for (VolumeSpec v : volumes) {
+            String seg = llmCacheService.expandVolume(blueprint, setting, plan,
+                    prevVolumes.toString(), v.name(), v.arc(), v.start(), v.end());
+            // 自检:偏离主题 / 与前文矛盾 / 编号不连续 → 带反馈重试一次
+            String context = "【主题】" + theme + "\n【整书规划】\n" + plan + "\n【前情摘要】\n" + prevVolumes;
+            String check = llmCacheService.selfCheck(theme, seg, context);
+            if (check != null && check.contains("需修正")) {
+                log.info("[/outline] 第 {} 卷自检未通过,带反馈重试", v.index());
+                String retryBlueprint = blueprint + "\n\n【自检反馈,必须修正以下问题后重新输出本卷细纲】\n" + check;
+                String seg2 = llmCacheService.expandVolume(retryBlueprint, setting, plan,
+                        prevVolumes + "\n\n自检问题:\n" + check, v.name(), v.arc(), v.start(), v.end());
+                if (seg2 != null && !seg2.isBlank()) {
+                    seg = seg2;
+                }
             }
-            cursor = end + 1;
+            if (seg == null || seg.isBlank()) {
+                log.warn("[/outline] 第 {} 卷展开为空,跳过", v.index());
+                prevVolumes.append("\n[第").append(v.index()).append("卷《").append(v.name()).append("》] (生成失败)");
+                continue;
+            }
+            sb.append("## 第 ").append(v.index()).append(" 卷 · ").append(v.name()).append("\n");
+            if (v.arc() != null && !v.arc().isBlank()) {
+                sb.append("卷主线:").append(v.arc()).append("\n\n");
+            }
+            sb.append(seg).append("\n\n");
+            // 累积本卷摘要,作为下一卷的"前情"
+            prevVolumes.append(summarizeVolume(v, seg));
         }
-        return sb.toString();
+        return sb.toString().trim();
+    }
+
+    /**
+     * 把一卷生成的逐章细纲压缩为"前情摘要",用于下一卷生成的连贯性自检上下文。
+     * <p>只保留章号/章名与"主线"一句,控制长度。</p>
+     */
+    private String summarizeVolume(VolumeSpec v, String seg) {
+        StringBuilder b = new StringBuilder();
+        b.append("\n[第").append(v.index()).append("卷《").append(v.name()).append("》] 主线:")
+                .append(v.arc() == null ? "" : v.arc()).append("\n");
+        Pattern chRe = Pattern.compile("#{1,4}\\s*第\\s*\\d+\\s*章\\s*(.*)$");
+        Pattern mainRe = Pattern.compile("-\\s*主线[:：]\\s*(.+)");
+        for (String line : seg.split("\n")) {
+            String t = line.trim();
+            Matcher cm = chRe.matcher(t);
+            if (cm.find()) {
+                b.append("第").append(t.replaceAll("#", "").trim()).append(" ");
+                continue;
+            }
+            Matcher mm = mainRe.matcher(t);
+            if (mm.find()) {
+                b.append(mm.group(1).trim()).append("\n");
+            }
+        }
+        return b.toString();
+    }
+
+    /** 卷结构(索引 / 卷名 / 主线 / 章数 / 全局起止章号)。 */
+    private record VolumeSpec(int index, String name, String arc, int chapterCount, int start, int end) {
+        VolumeSpec(int index, String name, String arc, int chapterCount) {
+            this(index, name, arc, chapterCount, 0, 0);
+        }
     }
 
     /**

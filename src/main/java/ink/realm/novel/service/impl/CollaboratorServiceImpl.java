@@ -62,10 +62,13 @@ public class CollaboratorServiceImpl implements CollaboratorService {
         if (user.getId().equals(ownerId)) {
             throw new BusinessException(ResultCode.PARAM_INVALID, "不能将自己添加为协作者");
         }
-        // 已存在则冲突(幂等保护)
+        // 已存在(有效)则冲突(幂等保护)
         if (collaboratorMapper.findByNovelIdAndUserId(novelId, user.getId()) != null) {
             throw new BusinessException(ResultCode.CONFLICT, "该用户已是本小说的协作者");
         }
+        // 该用户可能曾被移除(逻辑删除残留 is_del=1)而仍占用唯一键,
+        // 物理清理同唯一键的旧行后再插入,避免 (novel_id, user_id) 唯一约束冲突
+        collaboratorMapper.physicallyDeleteByNovelIdAndUserId(novelId, user.getId());
 
         NovelCollaborator entity = NovelCollaborator.builder()
                 .novelId(novelId)

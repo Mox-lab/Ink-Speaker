@@ -66,6 +66,19 @@ check_prerequisites() {
         fatal "缺少 docker-compose.yml 文件,请确认部署文件齐全"
     fi
 
+    # 修复 Windows CRLF 换行:从 Windows 上传的部署文件常带 \r,
+    # 会导致 source .env.prod 报 '$'\r': command not found'、或 YAML 解析异常。
+    # 这里在加载前自动将其转换为 LF,无需手动 sed。
+    fix_crlf() {
+        local f="$1"
+        if [[ -f "${f}" ]] && grep -lq $'\r' "${f}" 2>/dev/null; then
+            info "  修复 CRLF 换行符:${f}"
+            sed -i 's/\r$//' "${f}"
+        fi
+    }
+    fix_crlf "${ENV_FILE}"
+    fix_crlf "${APP_DIR}/docker-compose.yml"
+
     set -a
     # shellcheck disable=SC1090
     source "${ENV_FILE}"

@@ -44,4 +44,11 @@ public interface NovelChapterContentMapper extends BaseMapper<NovelChapterConten
 
     /** 级联删除:物理删除指定小说的全部章节。 */
     int deleteByNovelId(@Param("novelId") Long novelId);
+
+    /**
+     * 物理删除同 (novel_id, chapter_no) 的全部行(含逻辑删除残留)。
+     * <p>用于"删除章节后重新保存同章节号"场景:逻辑删除仅置 is_del=1,行仍占用
+     * {@code (novel_id, chapter_no)} 唯一键,重新插入会触发唯一约束冲突。原生 SQL 绕过逻辑删除拦截器。</p>
+     */
+    int physicallyDeleteByNovelIdAndChapterNo(@Param("novelId") Long novelId, @Param("chapterNo") Integer chapterNo);
 }

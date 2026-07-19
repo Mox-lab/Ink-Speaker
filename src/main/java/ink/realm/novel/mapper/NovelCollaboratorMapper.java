@@ -38,4 +38,11 @@ public interface NovelCollaboratorMapper extends BaseMapper<NovelCollaborator> {
                 .eq(NovelCollaborator::getNovelId, novelId)
                 .eq(NovelCollaborator::getUserId, userId));
     }
+
+    /**
+     * 物理删除同 (novel_id, user_id) 的全部行(含逻辑删除残留)。
+     * <p>用于"移除协作者后重新邀请"场景:逻辑删除仅置 is_del=1,行仍占用
+     * {@code (novel_id, user_id)} 唯一键,重新插入会触发唯一约束冲突。原生 SQL 绕过逻辑删除拦截器。</p>
+     */
+    int physicallyDeleteByNovelIdAndUserId(@Param("novelId") Long novelId, @Param("userId") Long userId);
 }

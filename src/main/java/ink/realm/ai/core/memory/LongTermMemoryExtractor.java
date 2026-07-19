@@ -1,28 +1,31 @@
 package ink.realm.ai.core.memory;
 
 import ink.realm.ai.domain.agent.CharacterProfile;
+import ink.realm.ai.domain.agent.CharacterRelationship;
 import ink.realm.ai.agent.CharacterExtractionAgent;
 import ink.realm.common.context.NovelContext;
-import ink.realm.novel.mapper.NovelCharacterMapper;
-import ink.realm.novel.domain.entity.NovelCharacter;
-import ink.realm.novel.domain.vo.CharacterVo;
+import ink.realm.novel.domain.entity.NovelWorldSetting;
+import ink.realm.novel.mapper.NovelWorldSettingMapper;
+import ink.realm.util.JsonUtil;
 import ink.realm.util.NovelConstants;
-import ink.realm.util.VoConverters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 长期记忆抽取器。
  * <p>对标 cc-haha {@code src/services/extractMemories.ts}。
  * 每生成完一段文本(章节/大纲)后,异步调用 LLM 抽取:</p>
  * <ul>
- *   <li>新出现的人物 → 写入 {@code novel_character} 表</li>
- *   <li>人物状态变化(受伤/升级/黑化) → 更新 background 字段</li>
+ *   <li>新出现的人物 → 写入设定集「人物」分类(novel_world_setting, category='人物')</li>
+ *   <li>人物状态变化(受伤/升级/黑化) → 更新 background 字段(后续可扩展)</li>
  *   <li>新设定关键词 → 写入 {@code novel_world_setting}(待实现,P2 阶段补)</li>
  * </ul>
  *
@@ -37,7 +40,7 @@ import java.util.List;
 public class LongTermMemoryExtractor {
 
     private final CharacterExtractionAgent extractionAgent;
-    private final NovelCharacterMapper characterDao;
+    private final NovelWorldSettingMapper worldSettingDao;
 
     @Value("${ink.current-id:" + NovelConstants.DEFAULT_NOVEL_ID + "}")
     private Long fallbackNovelId;
@@ -46,7 +49,7 @@ public class LongTermMemoryExtractor {
     private boolean extractEnabled;
 
     /**
-     * 异步从文本中抽取人物档案并写回业务表。
+     * 异步从文本中抽取人物档案并写回设定集「人物」分类。
      * <p>幂等:同名人物已存在则跳过(不覆盖作者手填的设定)。</p>
      *
      * @param text      章节正文 / 大纲 / 任意含人物描写的文本
@@ -77,38 +80,56 @@ public class LongTermMemoryExtractor {
             }
 
             // 同名跳过:作者手填的设定优先,不自动覆盖
-            if (characterDao.findByNovelIdAndName(resolved, profile.name()).isPresent()) {
+            if (worldSettingDao.findByNovelIdAndKeyword(resolved, profile.name()).isPresent()) {
                 log.info("[LongTermMemory] 人物 '{}' 已存在,跳过自动入库", profile.name());
                 return;
             }
 
-            NovelCharacter entity = NovelCharacter.builder()
+            NovelWorldSetting entity = NovelWorldSetting.builder()
                     .novelId(resolved)
-                    .name(profile.name())
-                    .age(profile.age())
-                    .gender(profile.gender())
-                    .identity(profile.identity())
-                    .personality(profile.personality())
-                    .appearance(profile.appearance())
-                    .weapon(profile.weapon())
-                    .background(profile.background())
+                    .keyword(profile.name())
+                    .category("人物")
+                    .description(buildCharacterDescription(profile))
                     .build();
-            characterDao.insert(entity);
-            log.info("[LongTermMemory] 第 {} 章抽取人物 '{}' 已入库", chapterNo, profile.name());
+            worldSettingDao.insert(entity);
+            log.info("[LongTermMemory] 第 {} 章抽取人物 '{}' 已入库(设定集人物分类)", chapterNo, profile.name());
         } catch (Exception e) {
             log.warn("[LongTermMemory] 第 {} 章人物抽取失败:{}", chapterNo, e.getMessage());
         }
     }
 
     /**
-     * 列出当前小说的全部已抽取人物(供前端"记忆可视化"面板使用)。
+     * 把抽取到的人物档案序列化为设定集「人物」结构的 description(JSON 字符串)。
      */
-    public List<CharacterVo> listExtractedCharacters() {
-        Long novelId = NovelContext.getNovelId();
-        Long resolved = novelId != null ? novelId : fallbackNovelId;
-        return characterDao.listByNovelId(resolved).stream()
-                .map(VoConverters::toVo)
-                .toList();
+    private String buildCharacterDescription(CharacterProfile p) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("_struct", "character");
+        data.put("text", p.background() == null ? "" : p.background());
+        data.put("gender", p.gender() == null ? "" : p.gender());
+        data.put("age", p.age() == null ? 0 : p.age());
+        data.put("identity", p.identity() == null ? "" : p.identity());
+        data.put("personality", p.personality() == null ? "" : p.personality());
+        data.put("appearance", p.appearance() == null ? "" : p.appearance());
+        data.put("weapon", p.weapon() == null ? "" : p.weapon());
+        data.put("background", p.background() == null ? "" : p.background());
+        data.put("faction", "");
+        List<Map<String, Object>> relations = new ArrayList<>();
+        if (p.relationships() != null) {
+            for (CharacterRelationship r : p.relationships()) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("target", r.target());
+                m.put("type", r.type());
+                m.put("desc", r.note());
+                relations.add(m);
+            }
+        }
+        data.put("relations", relations);
+        data.put("tags", new ArrayList<>());
+        try {
+            return JsonUtil.MAPPER.writeValueAsString(data);
+        } catch (Exception e) {
+            log.warn("[LongTermMemory] 序列化人物 description 失败: {}", e.getMessage());
+            return "{}";
+        }
     }
 }
-

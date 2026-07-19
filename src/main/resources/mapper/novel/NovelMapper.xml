@@ -20,9 +20,9 @@
         SELECT COUNT(1) FROM novel_outline WHERE novel_id = #{novelId} AND is_del = 0
     </select>
 
-    <!-- 概览统计:人物档案数(排除逻辑删除) -->
+    <!-- 概览统计:人物档案数(设定集「人物」分类,排除逻辑删除) -->
     <select id="countCharacters" resultType="int">
-        SELECT COUNT(1) FROM novel_character WHERE novel_id = #{novelId} AND is_del = 0
+        SELECT COUNT(1) FROM novel_world_setting WHERE novel_id = #{novelId} AND category = '人物' AND is_del = 0
     </select>
 
     <!-- 概览统计:世界观设定数(排除逻辑删除) -->

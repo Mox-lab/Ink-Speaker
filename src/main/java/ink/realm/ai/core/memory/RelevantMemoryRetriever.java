@@ -4,10 +4,12 @@ import ink.realm.ai.domain.agent.LoreSearchHit;
 import ink.realm.ai.service.KnowledgeBaseService;
 import ink.realm.common.context.NovelContext;
 import ink.realm.novel.mapper.NovelChapterTimelineMapper;
-import ink.realm.novel.mapper.NovelCharacterMapper;
-import ink.realm.novel.domain.entity.NovelCharacter;
+import ink.realm.novel.mapper.NovelWorldSettingMapper;
 import ink.realm.novel.domain.entity.NovelChapterTimeline;
+import ink.realm.novel.domain.entity.NovelWorldSetting;
+import ink.realm.novel.domain.vo.CharacterVo;
 import ink.realm.util.NovelConstants;
+import ink.realm.util.VoConverters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,7 +37,7 @@ import java.util.List;
 public class RelevantMemoryRetriever {
 
     private final KnowledgeBaseService knowledgeBaseService;
-    private final NovelCharacterMapper characterDao;
+    private final NovelWorldSettingMapper worldSettingDao;
     private final NovelChapterTimelineMapper timelineDao;
 
     @Value("${ink.current-id:" + NovelConstants.DEFAULT_NOVEL_ID + "}")
@@ -62,14 +64,15 @@ public class RelevantMemoryRetriever {
         return sb.toString();
     }
 
-    /** 追加人物档案段(全部)。 */
+    /** 追加人物档案段(全部,来源:设定集「人物」分类)。 */
     private void appendCharacters(StringBuilder sb, Long novelId) {
-        List<NovelCharacter> characters = characterDao.listByNovelId(novelId);
+        List<CharacterVo> characters = worldSettingDao.listByNovelIdAndCategory(novelId, "人物")
+                .stream().map(VoConverters::toCharacterVo).toList();
         if (characters.isEmpty()) {
             return;
         }
         sb.append("【人物档案】\n");
-        for (NovelCharacter c : characters) {
+        for (CharacterVo c : characters) {
             sb.append("- ").append(c.getName());
             if (c.getPersonality() != null) {
                 sb.append(" / ").append(c.getPersonality());

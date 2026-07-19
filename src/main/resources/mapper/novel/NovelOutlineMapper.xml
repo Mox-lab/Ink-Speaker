@@ -8,4 +8,9 @@
         DELETE FROM novel_outline WHERE novel_id = #{novelId}
     </delete>
 
+    <!-- 取最大版本号(含逻辑删除行),避免删除后版本号复用触发唯一约束冲突 -->
+    <select id="selectMaxVersionIncludingDeleted" resultType="int">
+        SELECT MAX(version) FROM novel_outline WHERE novel_id = #{novelId}
+    </select>
+
 </mapper>

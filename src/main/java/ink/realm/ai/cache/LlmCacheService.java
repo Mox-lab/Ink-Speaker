@@ -94,28 +94,92 @@ public class LlmCacheService {
     }
 
     /**
-     * 阶段 3/5 大纲单批(带缓存)。
+     * 阶段 3/5 大纲 — 卷规划(带缓存)。
      *
-     * <p>注意:章节数 N 的不同会产生不同 key,所以必须把 chapters 计入 hash。
-     * 续生场景因含 lastOutline 不同,天然不命中,符合预期。</p>
+     * <p>缓存 key 基于 blueprint + setting 的稳定 hash;同一题材在 TTL 内复用,避免重复规划。
+     * 不再传入"目标章节数",各卷章数由模型依据题材体量自行决定。</p>
      *
-     * @param segHint  分批提示(含 blueprint + tailHint + 范围)
-     * @param setting  设定集
-     * @param chapters 本批章节数
-     * @return 大纲片段
+     * @param blueprint 题材蓝图
+     * @param setting   设定集
+     * @return 卷规划 markdown
      */
-    public String generateOutlineBatch(String segHint, String setting, int chapters) {
-        String s = promptNormalizer.normalize(segHint);
+    public String planVolumes(String blueprint, String setting) {
+        String b = promptNormalizer.normalize(blueprint);
         String st = setting == null ? "" : setting;
-        String key = promptNormalizer.stableKey(s, st, String.valueOf(chapters));
-        return multiLevelCache.get("llmOutline", key, () -> {
-            log.debug("[LlmCache] outline miss, calling LLM: segHint.len={}, chapters={}", s.length(), chapters);
+        String key = promptNormalizer.stableKey(b, st);
+        return multiLevelCache.get("llmOutlinePlan", key, () -> {
+            log.debug("[LlmCache] outline-plan miss, calling LLM: blueprint.len={}", b.length());
             long start = System.nanoTime();
             try {
-                return outlineAgent.generate(s, st, chapters);
+                return outlineAgent.planVolumes(b, st);
             } finally {
                 metricsRecorder.recordMiss();
-                metricsRecorder.recordCallDuration("outline", System.nanoTime() - start);
+                metricsRecorder.recordCallDuration("outlinePlan", System.nanoTime() - start);
+            }
+        });
+    }
+
+    /**
+     * 阶段 3/5 大纲 — 分卷展开为逐章细纲(带缓存)。
+     *
+     * <p>key 纳入 blueprint/setting/整书规划/前情/卷名/卷主线/起止章号,任何一项变化都视为新请求。</p>
+     *
+     * @param blueprint    题材蓝图(重试时含自检反馈)
+     * @param setting      设定集
+     * @param volumePlan   整书卷规划
+     * @param prevVolumes  已完成各卷摘要
+     * @param volumeName   本卷卷名
+     * @param volumeArc    本卷主线
+     * @param startChapter 本卷起始章号
+     * @param endChapter   本卷结束章号
+     * @return 本卷逐章细纲
+     */
+    public String expandVolume(String blueprint, String setting, String volumePlan, String prevVolumes,
+                               String volumeName, String volumeArc, int startChapter, int endChapter) {
+        String b = promptNormalizer.normalize(blueprint);
+        String st = setting == null ? "" : setting;
+        String vp = volumePlan == null ? "" : volumePlan;
+        String pv = prevVolumes == null ? "" : prevVolumes;
+        String vn = volumeName == null ? "" : volumeName;
+        String va = volumeArc == null ? "" : volumeArc;
+        String key = promptNormalizer.stableKey(b, st, vp, pv, vn, va,
+                String.valueOf(startChapter), String.valueOf(endChapter));
+        return multiLevelCache.get("llmOutlineExpand", key, () -> {
+            log.debug("[LlmCache] outline-expand miss, calling LLM: vol={}, span={}-{}",
+                    vn, startChapter, endChapter);
+            long start = System.nanoTime();
+            try {
+                return outlineAgent.expandVolume(b, st, vp, pv, vn, va, startChapter, endChapter);
+            } finally {
+                metricsRecorder.recordMiss();
+                metricsRecorder.recordCallDuration("outlineExpand", System.nanoTime() - start);
+            }
+        });
+    }
+
+    /**
+     * 阶段 3/5 大纲 — 单卷自检(带缓存)。
+     *
+     * <p>key 基于 theme + segment + context;重试时 context 含反馈,自然不命中缓存。</p>
+     *
+     * @param theme    主题
+     * @param segment  待检大纲片段
+     * @param context  前情与全局上下文
+     * @return 自检结论文本
+     */
+    public String selfCheck(String theme, String segment, String context) {
+        String th = promptNormalizer.normalize(theme);
+        String sg = segment == null ? "" : segment;
+        String cx = context == null ? "" : context;
+        String key = promptNormalizer.stableKey(th, sg, cx);
+        return multiLevelCache.get("llmOutlineCheck", key, () -> {
+            log.debug("[LlmCache] outline-check miss, calling LLM: segment.len={}", sg.length());
+            long start = System.nanoTime();
+            try {
+                return outlineAgent.selfCheck(th, sg, cx);
+            } finally {
+                metricsRecorder.recordMiss();
+                metricsRecorder.recordCallDuration("outlineCheck", System.nanoTime() - start);
             }
         });
     }

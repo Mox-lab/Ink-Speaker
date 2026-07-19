@@ -118,10 +118,15 @@ public class ChapterServiceImpl implements ChapterService {
         for (int attempt = 1; attempt <= SAVE_RETRY_MAX; attempt++) {
             try {
                 NovelChapterContent chapter = chapterDao.findByNovelIdAndChapterNo(novelId, chapterNo)
-                        .orElseGet(() -> NovelChapterContent.builder()
-                                .novelId(novelId)
-                                .chapterNo(chapterNo)
-                                .build());
+                        .orElseGet(() -> {
+                            // 同章节号可能因逻辑删除残留(is_del=1)而仍占用唯一键,
+                            // 物理清理同唯一键的旧行后再插入,避免 (novel_id, chapter_no) 唯一约束冲突
+                            chapterDao.physicallyDeleteByNovelIdAndChapterNo(novelId, chapterNo);
+                            return NovelChapterContent.builder()
+                                    .novelId(novelId)
+                                    .chapterNo(chapterNo)
+                                    .build();
+                        });
                 chapter.setTitle(request.title() != null ? request.title() : "");
                 chapter.setContent(content);
                 chapter.setWordCount(content.length());

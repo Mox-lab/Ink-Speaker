@@ -1,8 +1,11 @@
 package ink.realm.config.security;
 
+import tools.jackson.databind.ObjectMapper;
+import ink.realm.common.result.ResultCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -12,12 +15,17 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Spring Security 配置。
@@ -38,6 +46,8 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomUserDetailsService userDetailsService;
+    private final RestAuthenticationEntryPoint authenticationEntryPoint;
+    private final ObjectMapper objectMapper;
 
     /**
      * 安全过滤器链。
@@ -76,6 +86,10 @@ public class SecurityConfig {
                         // 其他请求:允许(静态资源等)
                         .anyRequest().permitAll()
                 )
+                // 未认证 → 401(触发前端自动 refresh / 跳登录);已认证但无权限 → 403
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler()))
                 // 注入 JWT 过滤器:在 UsernamePasswordAuthenticationFilter 之前
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 // 关闭表单登录与 HTTP Basic(纯 JWT)
@@ -115,6 +129,26 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * 已认证但无权限(如非 ADMIN 访问 /api/admin/**)的统一响应。
+     * <p>返回 403 + 业务码 2003,与业务层抛出的 FORBIDDEN 保持一致的语义,
+     * 避免默认 {@code AccessDeniedHandler} 返回空 body 的 403。</p>
+     */
+    private AccessDeniedHandler accessDeniedHandler() {
+        return (HttpServletRequest request, HttpServletResponse response,
+                org.springframework.security.access.AccessDeniedException accessDeniedException) -> {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            Map<String, Object> body = Map.of(
+                    "code", ResultCode.FORBIDDEN.getCode(),
+                    "message", ResultCode.FORBIDDEN.getMessage(),
+                    "data", (Object) null
+            );
+            response.getWriter().write(objectMapper.writeValueAsString(body));
+        };
     }
 
     /**

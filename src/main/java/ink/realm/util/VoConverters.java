@@ -3,7 +3,6 @@ package ink.realm.util;
 import ink.realm.novel.domain.entity.Novel;
 import ink.realm.novel.domain.entity.NovelChapterContent;
 import ink.realm.novel.domain.entity.NovelChapterTimeline;
-import ink.realm.novel.domain.entity.NovelCharacter;
 import ink.realm.novel.domain.entity.NovelOutline;
 import ink.realm.novel.domain.entity.NovelReviewIssue;
 import ink.realm.novel.domain.entity.NovelWorldSetting;
@@ -79,27 +78,6 @@ public final class VoConverters {
                 .build();
     }
 
-    public static CharacterVo toVo(NovelCharacter c) {
-        if (c == null) {
-            return null;
-        }
-        return CharacterVo.builder()
-                .id(c.getId())
-                .novelId(c.getNovelId())
-                .name(c.getName())
-                .age(c.getAge())
-                .gender(c.getGender())
-                .personality(c.getPersonality())
-                .weapon(c.getWeapon())
-                .background(c.getBackground())
-                .identity(c.getIdentity())
-                .appearance(c.getAppearance())
-                .relationships(parseRelationships(c.getRelationships()))
-                .createdAt(c.getCtTime())
-                .updatedAt(c.getUtTime())
-                .build();
-    }
-
     public static WorldSettingVo toVo(NovelWorldSetting s) {
         if (s == null) {
             return null;
@@ -113,6 +91,69 @@ public final class VoConverters {
                 .createdAt(s.getCtTime())
                 .updatedAt(s.getUtTime())
                 .build();
+    }
+
+    /**
+     * 设定集「人物」分类条目 → 人物展示 VO。
+     * <p>人物数据现统一存于 {@code novel_world_setting}(category='人物'),
+     * description 内嵌 {@code {_struct:'character', ...}} 结构化 JSON,
+     * 本方法解析后以 CharacterVo 暴露给概览/共享浏览/导出/续写建议等消费方。</p>
+     */
+    public static CharacterVo toCharacterVo(NovelWorldSetting s) {
+        if (s == null) {
+            return null;
+        }
+        Integer age = null;
+        String gender = null;
+        String personality = null;
+        String weapon = null;
+        String background = null;
+        String identity = null;
+        String appearance = null;
+
+        Map<String, Object> m = JsonUtil.parseMap(s.getDescription());
+        if (m != null && "character".equals(m.get("_struct"))) {
+            Object a = m.get("age");
+            if (a instanceof Number) {
+                age = ((Number) a).intValue();
+            } else if (a instanceof String && !((String) a).isBlank()) {
+                try {
+                    age = Integer.parseInt(((String) a).trim());
+                } catch (NumberFormatException ignored) {
+                    /* 忽略非法年龄 */
+                }
+            }
+            gender = str(m.get("gender"));
+            personality = str(m.get("personality"));
+            weapon = str(m.get("weapon"));
+            background = str(m.get("background"));
+            identity = str(m.get("identity"));
+            appearance = str(m.get("appearance"));
+        }
+
+        return CharacterVo.builder()
+                .id(s.getId())
+                .novelId(s.getNovelId())
+                .name(s.getKeyword())
+                .age(age)
+                .gender(gender)
+                .personality(personality)
+                .weapon(weapon)
+                .background(background)
+                .identity(identity)
+                .appearance(appearance)
+                .relationships(null)
+                .createdAt(s.getCtTime())
+                .updatedAt(s.getUtTime())
+                .build();
+    }
+
+    private static String str(Object o) {
+        if (o == null) {
+            return null;
+        }
+        String v = String.valueOf(o);
+        return v.isBlank() ? null : v;
     }
 
     public static TimelineVo toVo(NovelChapterTimeline t) {

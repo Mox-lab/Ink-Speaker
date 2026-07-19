@@ -48,6 +48,30 @@ public interface NovelWorldSettingMapper extends BaseMapper<NovelWorldSetting> {
                 .apply("keyword ILIKE CONCAT('%', {0}, '%')", keyword));
     }
 
+    /** 关键词模糊匹配(ILIKE)+ 分类筛选(设定集「人物」检索用)。 */
+    default List<NovelWorldSetting> searchByNovelIdAndKeywordContainingAndCategory(Long novelId, String keyword, String category) {
+        return this.selectList(new LambdaQueryWrapper<NovelWorldSetting>()
+                .eq(NovelWorldSetting::getNovelId, novelId)
+                .eq(NovelWorldSetting::getCategory, category)
+                .apply("keyword ILIKE CONCAT('%', {0}, '%')", keyword));
+    }
+
     /** 级联删除:物理删除指定小说的全部世界观设定。 */
     int deleteByNovelId(@Param("novelId") Long novelId);
+
+    /**
+     * 物理删除同 (novel_id, keyword) 的全部行(含逻辑删除残留)。
+     * <p>用于"删除后重新插入同名设定"场景:逻辑删除仅置 is_del=1,行仍占用唯一键,
+     * 重新插入会触发 {@code novel_world_setting_novel_id_keyword_key} 唯一约束冲突。
+     * 该方法为原生 SQL,绕过 MyBatis-Plus 的逻辑删除拦截器,真正移除旧行以腾出唯一键。</p>
+     */
+    int physicallyDeleteByNovelIdAndKeyword(@Param("novelId") Long novelId, @Param("keyword") String keyword);
+
+    /**
+     * 物理删除指定主键的世界观设定行。
+     * <p>用于用户主动删除单条设定:逻辑删除仅置 is_del=1,行仍占用
+     * {@code (novel_id, keyword)} 唯一键,导致同名设定无法重新创建。
+     * 该方法为原生 SQL,绕过 MyBatis-Plus 的逻辑删除拦截器,真正移除旧行。</p>
+     */
+    int physicallyDeleteById(@Param("id") Long id);
 }

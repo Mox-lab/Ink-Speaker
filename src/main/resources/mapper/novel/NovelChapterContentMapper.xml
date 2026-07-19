@@ -8,4 +8,9 @@
         DELETE FROM novel_chapter_content WHERE novel_id = #{novelId}
     </delete>
 
+    <!-- 物理清理同 (novel_id, chapter_no) 全部行(含逻辑删除残留),为新插入腾出唯一键 -->
+    <delete id="physicallyDeleteByNovelIdAndChapterNo">
+        DELETE FROM novel_chapter_content WHERE novel_id = #{novelId} AND chapter_no = #{chapterNo}
+    </delete>
+
 </mapper>

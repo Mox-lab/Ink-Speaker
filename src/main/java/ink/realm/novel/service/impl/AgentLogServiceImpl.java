@@ -1,6 +1,6 @@
 package ink.realm.novel.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import tools.jackson.core.JacksonException;
 import ink.realm.novel.domain.entity.AgentLog;
 import ink.realm.novel.mapper.AgentLogMapper;
 import ink.realm.novel.service.AgentLogService;
@@ -65,7 +65,7 @@ public class AgentLogServiceImpl implements AgentLogService {
         }
         try {
             return JsonUtil.MAPPER.writeValueAsString(props);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("[AgentLog] serialize props failed: {}", e.getMessage());
             return null;
         }

@@ -8,13 +8,11 @@ import ink.realm.novel.domain.dto.NovelUpdateRequest;
 import ink.realm.auth.domain.entity.User;
 import ink.realm.novel.domain.entity.Novel;
 import ink.realm.novel.domain.entity.NovelChapterContent;
-import ink.realm.novel.domain.entity.NovelCharacter;
 import ink.realm.novel.domain.entity.NovelCollaborator;
 import ink.realm.novel.domain.entity.NovelOutline;
 import ink.realm.novel.domain.entity.NovelWorldSetting;
 import ink.realm.novel.mapper.NovelChapterContentMapper;
 import ink.realm.novel.mapper.NovelChapterTimelineMapper;
-import ink.realm.novel.mapper.NovelCharacterMapper;
 import ink.realm.novel.mapper.NovelMapper;
 import ink.realm.novel.mapper.NovelOutlineMapper;
 import ink.realm.novel.mapper.NovelReviewIssueMapper;
@@ -25,6 +23,7 @@ import ink.realm.novel.service.NovelService;
 import ink.realm.auth.mapper.UserMapper;
 import ink.realm.config.security.SecurityRoles;
 import ink.realm.novel.domain.vo.ChapterSummaryVo;
+import ink.realm.novel.domain.vo.CharacterVo;
 import ink.realm.novel.domain.vo.NovelExportPayload;
 import ink.realm.novel.domain.vo.NovelOverviewVo;
 import ink.realm.novel.domain.vo.NovelVo;
@@ -102,7 +101,6 @@ public class NovelServiceImpl implements NovelService {
     private final NovelMapper novelDao;
     private final NovelChapterContentMapper chapterDao;
     private final NovelOutlineMapper outlineDao;
-    private final NovelCharacterMapper characterDao;
     private final NovelWorldSettingMapper settingDao;
     private final NovelChapterTimelineMapper timelineDao;
     private final NovelReviewIssueMapper reviewIssueDao;
@@ -235,7 +233,6 @@ public class NovelServiceImpl implements NovelService {
         // 级联删除子表(顺序无关,均在同一事务内)
         chapterDao.deleteByNovelId(id);
         outlineDao.deleteByNovelId(id);
-        characterDao.deleteByNovelId(id);
         settingDao.deleteByNovelId(id);
         timelineDao.deleteByNovelId(id);
         reviewIssueDao.deleteByNovelId(id);
@@ -286,7 +283,7 @@ public class NovelServiceImpl implements NovelService {
 
         List<TimelineEventVo> timeline = buildTimeline(
                 recentChapters, outlines,
-                characterDao.listByNovelId(id),
+                settingDao.listByNovelIdAndCategory(id, "人物"),
                 settingDao.listByNovelId(id),
                 reviewIssueDao.listByNovelIdAndStatusOrderByChapterNoAsc(id, ISSUE_STATUS_OPEN));
 
@@ -319,7 +316,7 @@ public class NovelServiceImpl implements NovelService {
      */
     private List<TimelineEventVo> buildTimeline(List<NovelChapterContent> chapters,
                                                 List<NovelOutline> outlines,
-                                                List<NovelCharacter> characters,
+                                                List<NovelWorldSetting> characters,
                                                 List<NovelWorldSetting> settings,
                                                 List<NovelReviewIssue> issues) {
         List<TimelineEventVo> events = new ArrayList<>(chapters.size()
@@ -349,15 +346,17 @@ public class NovelServiceImpl implements NovelService {
                     .timestamp(o.getCtTime())
                     .build());
         }
-        for (NovelCharacter ch : characters) {
+        for (NovelWorldSetting ch : characters) {
             if (ch.getUtTime() == null) {
                 continue;
             }
+            // 人物结构化字段内嵌于 description,经 toCharacterVo 解析取性格摘要
+            CharacterVo cv = VoConverters.toCharacterVo(ch);
             events.add(TimelineEventVo.builder()
                     .type("character_added")
                     .resourceId(ch.getId())
-                    .title("人物 · " + safe(ch.getName()))
-                    .description(ArgsUtil.truncate(ch.getPersonality(), 80))
+                    .title("人物 · " + safe(ch.getKeyword()))
+                    .description(ArgsUtil.truncate(cv.getPersonality(), 80))
                     .timestamp(ch.getUtTime())
                     .build());
         }
@@ -457,7 +456,8 @@ public class NovelServiceImpl implements NovelService {
 
         List<NovelChapterContent> chapters = chapterDao.listByNovelIdOrderByChapterNoAsc(id);
         List<NovelOutline> outlines = outlineDao.listByNovelIdOrderByVersionDesc(id);
-        List<NovelCharacter> characters = characterDao.listByNovelId(id);
+        // 人物统一来源于设定集「人物」分类
+        List<NovelWorldSetting> characters = settingDao.listByNovelIdAndCategory(id, "人物");
         List<NovelWorldSetting> settings = settingDao.listByNovelId(id);
 
         log.info("[getSharedNovelBrowse] novelId={}, chapters={}, outlines={}, characters={}, settings={}",
@@ -481,7 +481,7 @@ public class NovelServiceImpl implements NovelService {
                         .map(o -> VoConverters.toSummaryVo(o, ArgsUtil.truncate(o.getContent(), 200)))
                         .toList())
                 .characters(characters.stream()
-                        .map(VoConverters::toVo)
+                        .map(VoConverters::toCharacterVo)
                         .toList())
                 .settings(settings.stream()
                         .map(VoConverters::toVo)
@@ -499,10 +499,16 @@ public class NovelServiceImpl implements NovelService {
         String fmt = normalizeFormat(format);
         List<NovelChapterContent> chapters = chapterDao.listByNovelIdOrderByChapterNoAsc(id);
         List<NovelOutline> outlines = outlineDao.listByNovelIdOrderByVersionDesc(id);
-        List<NovelCharacter> characters = characterDao.listByNovelId(id);
+        // 人物统一来源于设定集「人物」分类,转换为 CharacterVo 供导出渲染
+        List<NovelWorldSetting> charSettings = settingDao.listByNovelIdAndCategory(id, "人物");
+        List<CharacterVo> characters = charSettings.stream()
+                .map(VoConverters::toCharacterVo)
+                .toList();
         List<NovelWorldSetting> settings = settingDao.listByNovelId(id);
 
-        String filename = buildFilename(entity, fmt);
+        // 文件名仅含"小说名_昵称"(昵称取小说所有者展示名,无昵称回退用户名)
+        String nickname = resolveDisplayName(entity.getOwnerId());
+        String filename = buildFilename(entity, fmt, nickname);
         String contentType = contentTypeFor(fmt);
         byte[] bytes = switch (fmt) {
             case "json" -> toJsonBytes(entity, outlines, characters, settings, chapters);
@@ -530,10 +536,25 @@ public class NovelServiceImpl implements NovelService {
     }
 
     /**
-     * 构造下载文件名,对标题做安全清洗避免路径穿越。
-     * <p>格式:novel-{id}-{sanitized-title}.{ext}</p>
+     * 取指定用户的展示名(昵称优先,无昵称回退用户名,均无则回退 "author")。
+     * <p>不抛异常,保证文件名总能落到一个可用值。</p>
      */
-    private String buildFilename(Novel entity, String fmt) {
+    private String resolveDisplayName(Long userId) {
+        if (userId == null) return "author";
+        User user = userMapper.selectById(userId);
+        if (user == null) return "author";
+        String name = user.getNickname();
+        if (name == null || name.isBlank()) {
+            name = user.getUsername();
+        }
+        return (name == null || name.isBlank()) ? "author" : name;
+    }
+
+    /**
+     * 构造下载文件名,对标题与昵称做安全清洗避免路径穿越。
+     * <p>格式:{小说名}_{昵称}.{ext}</p>
+     */
+    private String buildFilename(Novel entity, String fmt, String nickname) {
         String rawTitle = entity.getTitle() == null ? "" : entity.getTitle().trim();
         String safeTitle = rawTitle.replaceAll(FILENAME_SAFE_REPLACE, "_");
         if (safeTitle.isBlank()) {
@@ -543,7 +564,16 @@ public class NovelServiceImpl implements NovelService {
         if (safeTitle.length() > 60) {
             safeTitle = safeTitle.substring(0, 60);
         }
-        return "novel-" + entity.getId() + "-" + safeTitle + "." + fmt;
+        String safeNick = (nickname == null ? "" : nickname)
+                .replaceAll(FILENAME_SAFE_REPLACE, "_")
+                .trim();
+        if (safeNick.isBlank()) {
+            safeNick = "author";
+        }
+        if (safeNick.length() > 30) {
+            safeNick = safeNick.substring(0, 30);
+        }
+        return safeTitle + "_" + safeNick + "." + fmt;
     }
 
     /**
@@ -562,7 +592,7 @@ public class NovelServiceImpl implements NovelService {
      */
     private byte[] toMarkdownBytes(Novel entity,
                                    List<NovelOutline> outlines,
-                                   List<NovelCharacter> characters,
+                                   List<CharacterVo> characters,
                                    List<NovelWorldSetting> settings,
                                    List<NovelChapterContent> chapters) {
         StringBuilder sb = new StringBuilder();
@@ -600,7 +630,7 @@ public class NovelServiceImpl implements NovelService {
         } else {
             sb.append("| 姓名 | 年龄 | 性别 | 武器 | 性格 | 背景 |\n");
             sb.append("| --- | --- | --- | --- | --- | --- |\n");
-            for (NovelCharacter c : characters) {
+            for (CharacterVo c : characters) {
                 sb.append("| ").append(safe(c.getName()))
                         .append(" | ").append(c.getAge() == null ? "" : c.getAge())
                         .append(" | ").append(safe(c.getGender()))
@@ -610,7 +640,7 @@ public class NovelServiceImpl implements NovelService {
                         .append(" |\n");
             }
             sb.append("\n");
-            for (NovelCharacter c : characters) {
+            for (CharacterVo c : characters) {
                 sb.append("### ").append(safe(c.getName())).append("\n\n");
                 if (c.getPersonality() != null && !c.getPersonality().isBlank()) {
                     sb.append("- 性格: ").append(safe(c.getPersonality())).append("\n");
@@ -670,7 +700,7 @@ public class NovelServiceImpl implements NovelService {
      */
     private byte[] toTxtBytes(Novel entity,
                               List<NovelOutline> outlines,
-                              List<NovelCharacter> characters,
+                              List<CharacterVo> characters,
                               List<NovelWorldSetting> settings,
                               List<NovelChapterContent> chapters) {
         StringBuilder sb = new StringBuilder();
@@ -699,7 +729,7 @@ public class NovelServiceImpl implements NovelService {
      */
     private byte[] toJsonBytes(Novel entity,
                                List<NovelOutline> outlines,
-                               List<NovelCharacter> characters,
+                               List<CharacterVo> characters,
                                List<NovelWorldSetting> settings,
                                List<NovelChapterContent> chapters) {
         Map<String, Object> root = new LinkedHashMap<>();
@@ -736,7 +766,7 @@ public class NovelServiceImpl implements NovelService {
             m.put("background", c.getBackground());
             m.put("identity", c.getIdentity());
             m.put("appearance", c.getAppearance());
-            m.put("relationships", JsonUtil.parseMap(c.getRelationships()));
+            m.put("relationships", c.getRelationships());
             return m;
         }).toList());
 

@@ -44,7 +44,7 @@ public class SettingController {
     public Result<SaveResultVo> saveSetting(@RequestBody @Valid SettingSaveRequest request) {
         // 前端不传 novelId(走 X-Novel-Id 头),此处用 NovelContext 兜底,避免落到 DEFAULT_NOVEL_ID
         SettingSaveRequest req = request.novelId() != null ? request
-                : new SettingSaveRequest(NovelContext.getNovelId(),
+                : new SettingSaveRequest(request.id(), NovelContext.getNovelId(),
                 request.keyword(), request.category(), request.description());
         return Result.success(settingService.saveSetting(req));
     }
@@ -58,11 +58,19 @@ public class SettingController {
         return Result.success();
     }
 
-    /** 按关键词模糊匹配设定(UX-06 写作侧边栏设定 RAG 检索)。 */
+    /** 批量保存设定(覆盖式 upsert,供 AI 生成设定集后“保存入库”)。 */
+    @Operation(summary = "批量保存设定")
+    @PostMapping("/batch")
+    public Result<List<SaveResultVo>> batchSaveSettings(@RequestBody List<SettingSaveRequest> requests) {
+        return Result.success(settingService.batchSaveSettings(requests));
+    }
+
+    /** 按关键词模糊匹配设定(UX-06 写作侧边栏设定检索,可限定分类)。 */
     @Operation(summary = "按关键词搜索设定")
     @GetMapping("/search")
     public Result<List<WorldSettingVo>> searchByKeyword(
-            @Parameter(description = "关键词片段,空串返回全部") @RequestParam(required = false) String keyword) {
-        return Result.success(settingService.searchByKeyword(NovelContext.getNovelId(), keyword));
+            @Parameter(description = "关键词片段,空串返回全部") @RequestParam(required = false) String keyword,
+            @Parameter(description = "分类过滤(如 '人物'),空则返回全部分类") @RequestParam(required = false) String category) {
+        return Result.success(settingService.searchByKeyword(NovelContext.getNovelId(), keyword, category));
     }
 }

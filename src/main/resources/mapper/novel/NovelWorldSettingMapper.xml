@@ -8,4 +8,14 @@
         DELETE FROM novel_world_setting WHERE novel_id = #{novelId}
     </delete>
 
+    <!-- 物理清理同 (novel_id, keyword) 全部行(含逻辑删除残留),为新插入腾出唯一键 -->
+    <delete id="physicallyDeleteByNovelIdAndKeyword">
+        DELETE FROM novel_world_setting WHERE novel_id = #{novelId} AND keyword = #{keyword}
+    </delete>
+
+    <!-- 物理删除指定主键的设定行(用户主动删除单条,绕过逻辑删除拦截器释放唯一键) -->
+    <delete id="physicallyDeleteById">
+        DELETE FROM novel_world_setting WHERE id = #{id}
+    </delete>
+
 </mapper>

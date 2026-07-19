@@ -19,4 +19,9 @@
         ORDER BY c.ct_time ASC
     </select>
 
+    <!-- 物理清理同 (novel_id, user_id) 全部行(含逻辑删除残留),为重新邀请腾出唯一键 -->
+    <delete id="physicallyDeleteByNovelIdAndUserId">
+        DELETE FROM novel_collaborator WHERE novel_id = #{novelId} AND user_id = #{userId}
+    </delete>
+
 </mapper>

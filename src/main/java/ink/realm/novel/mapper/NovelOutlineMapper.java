@@ -8,7 +8,6 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -36,14 +35,13 @@ public interface NovelOutlineMapper extends BaseMapper<NovelOutline> {
                 .eq(NovelOutline::isActive, true)));
     }
 
-    /** 最新版本号(取最大版本;无版本时返回 null)。 */
+    /** 最新版本号(取最大版本;含逻辑删除行,避免删除后版本号复用触发唯一约束冲突)。 */
     default Integer findMaxVersion(Long novelId) {
-        List<NovelOutline> list = this.selectList(new LambdaQueryWrapper<NovelOutline>()
-                .eq(NovelOutline::getNovelId, novelId)
-                .select(NovelOutline::getVersion));
-        return list.stream().map(NovelOutline::getVersion).filter(Objects::nonNull)
-                .max(Integer::compareTo).orElse(null);
+        return selectMaxVersionIncludingDeleted(novelId);
     }
+
+    /** 取最大版本号(含逻辑删除行),避免删除后版本号复用导致唯一约束冲突。 */
+    Integer selectMaxVersionIncludingDeleted(@Param("novelId") Long novelId);
 
     /** 切换激活版本前,先把同小说其他版本全部置为 inactive。 */
     default int clearActiveFlag(Long novelId) {
